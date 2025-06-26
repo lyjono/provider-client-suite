@@ -49,15 +49,19 @@ const Dashboard = () => {
 
   useEffect(() => {
     if (provider) {
+      // User is a provider
       setUserType('provider');
     } else if (client && client.length > 0) {
+      // User is a client
       setUserType('client');
     } else if (!providerLoading && !clientLoading && !provider && (!client || client.length === 0)) {
       // User needs onboarding
       if (providerSlug) {
+        // User came via provider link - show provider presentation first, then client onboarding
         setShowProviderPresentation(true);
         setUserType('client');
       } else {
+        // No provider slug - user wants to register as provider
         setUserType(null); // Will show provider onboarding
       }
     }
@@ -75,27 +79,27 @@ const Dashboard = () => {
     <AuthGuard>
       <div className="min-h-screen bg-gray-50">
         {/* Show provider presentation to potential clients */}
-        {showProviderPresentation && providerSlug && (
+        {showProviderPresentation && providerSlug && userType === 'client' && (
           <ProviderPresentation 
             providerSlug={providerSlug} 
             onStartOnboarding={() => setShowProviderPresentation(false)}
           />
         )}
         
-        {/* Client onboarding flow */}
-        {!showProviderPresentation && !provider && (!client || client.length === 0) && providerSlug && (
+        {/* Client onboarding flow - only when not showing presentation */}
+        {!showProviderPresentation && userType === 'client' && !provider && (!client || client.length === 0) && providerSlug && (
           <ClientOnboarding providerSlug={providerSlug} />
         )}
         
-        {/* Provider onboarding flow */}
-        {!provider && (!client || client.length === 0) && !providerSlug && (
+        {/* Provider onboarding flow - only when no provider slug */}
+        {userType === null && !provider && (!client || client.length === 0) && !providerSlug && (
           <ProviderOnboarding />
         )}
         
         {/* Provider dashboard */}
         {provider && <ProviderDashboard provider={provider} />}
         
-        {/* Client dashboard - now handles multiple providers */}
+        {/* Client dashboard - handles multiple providers */}
         {client && client.length > 0 && <ClientDashboard clients={client} />}
       </div>
     </AuthGuard>
