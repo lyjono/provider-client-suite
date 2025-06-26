@@ -13,6 +13,39 @@ interface ProviderLandingPageProps {
   providerSlug: string;
 }
 
+// Extended provider interface to handle optional properties
+interface ExtendedProvider {
+  id: string;
+  user_id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  company_name?: string;
+  phone?: string;
+  address: string;
+  bio?: string;
+  profile_image_url?: string;
+  provider_slug?: string;
+  created_at: string;
+  updated_at: string;
+  // Optional extended properties
+  tagline?: string;
+  services?: string[];
+  years_experience?: number;
+  hourly_rate?: number;
+  consultation_fee?: number;
+  education?: string;
+  certifications?: string[];
+  languages?: string[];
+  website_url?: string;
+  linkedin_url?: string;
+  twitter_url?: string;
+  // Relations
+  expertise_areas?: { name: string };
+  cities?: { name: string };
+  countries?: { name: string };
+}
+
 export const ProviderLandingPage = ({ providerSlug }: ProviderLandingPageProps) => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -20,7 +53,7 @@ export const ProviderLandingPage = ({ providerSlug }: ProviderLandingPageProps) 
   // Fetch provider info with error handling for new columns
   const { data: provider, isLoading } = useQuery({
     queryKey: ['provider-landing', providerSlug],
-    queryFn: async () => {
+    queryFn: async (): Promise<ExtendedProvider | null> => {
       try {
         // Start with basic provider data that we know exists
         const { data: basicProvider, error: basicError } = await supabase
@@ -54,10 +87,10 @@ export const ProviderLandingPage = ({ providerSlug }: ProviderLandingPageProps) 
             .eq('provider_slug', providerSlug)
             .maybeSingle();
 
-          return fullProvider || basicProvider;
+          return (fullProvider || basicProvider) as ExtendedProvider;
         } catch (relationError) {
           console.warn('Could not fetch provider relations, using basic data:', relationError);
-          return basicProvider;
+          return basicProvider as ExtendedProvider;
         }
       } catch (error) {
         console.error('Provider query failed:', error);
@@ -354,11 +387,11 @@ export const ProviderLandingPage = ({ providerSlug }: ProviderLandingPageProps) 
                         <span className="text-sm">{provider.phone}</span>
                       </div>
                     )}
-                    {((provider as any).cities?.name || (provider as any).countries?.name) && (
+                    {(provider.cities?.name || provider.countries?.name) && (
                       <div className="flex items-center">
                         <MapPin className="h-4 w-4 text-gray-500 mr-3" />
                         <span className="text-sm">
-                          {(provider as any).cities?.name}{(provider as any).cities?.name && (provider as any).countries?.name ? ', ' : ''}{(provider as any).countries?.name}
+                          {provider.cities?.name}{provider.cities?.name && provider.countries?.name ? ', ' : ''}{provider.countries?.name}
                         </span>
                       </div>
                     )}
@@ -367,7 +400,7 @@ export const ProviderLandingPage = ({ providerSlug }: ProviderLandingPageProps) 
               </Card>
 
               {/* Pricing */}
-              {((provider as any).hourly_rate || (provider as any).consultation_fee) && (
+              {(provider.hourly_rate || provider.consultation_fee) && (
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center">
@@ -376,16 +409,16 @@ export const ProviderLandingPage = ({ providerSlug }: ProviderLandingPageProps) 
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    {(provider as any).consultation_fee && (
+                    {provider.consultation_fee && (
                       <div className="flex justify-between">
                         <span>Initial Consultation</span>
-                        <span className="font-semibold">${(provider as any).consultation_fee}</span>
+                        <span className="font-semibold">${provider.consultation_fee}</span>
                       </div>
                     )}
-                    {(provider as any).hourly_rate && (
+                    {provider.hourly_rate && (
                       <div className="flex justify-between">
                         <span>Hourly Rate</span>
-                        <span className="font-semibold">${(provider as any).hourly_rate}/hr</span>
+                        <span className="font-semibold">${provider.hourly_rate}/hr</span>
                       </div>
                     )}
                   </CardContent>
@@ -398,35 +431,35 @@ export const ProviderLandingPage = ({ providerSlug }: ProviderLandingPageProps) 
                   <CardTitle>Professional Details</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {(provider as any).education && (
+                  {provider.education && (
                     <div className="flex items-start">
                       <BookOpen className="h-4 w-4 text-gray-500 mr-3 mt-1" />
                       <div>
                         <div className="font-medium text-sm">Education</div>
-                        <div className="text-sm text-gray-600">{(provider as any).education}</div>
+                        <div className="text-sm text-gray-600">{provider.education}</div>
                       </div>
                     </div>
                   )}
                   
-                  {(provider as any).certifications && (provider as any).certifications.length > 0 && (
+                  {provider.certifications && provider.certifications.length > 0 && (
                     <div className="flex items-start">
                       <Award className="h-4 w-4 text-gray-500 mr-3 mt-1" />
                       <div>
                         <div className="font-medium text-sm">Certifications</div>
                         <div className="text-sm text-gray-600">
-                          {(provider as any).certifications.join(', ')}
+                          {provider.certifications.join(', ')}
                         </div>
                       </div>
                     </div>
                   )}
                   
-                  {(provider as any).languages && (provider as any).languages.length > 0 && (
+                  {provider.languages && provider.languages.length > 0 && (
                     <div className="flex items-start">
                       <Languages className="h-4 w-4 text-gray-500 mr-3 mt-1" />
                       <div>
                         <div className="font-medium text-sm">Languages</div>
                         <div className="text-sm text-gray-600">
-                          {(provider as any).languages.join(', ')}
+                          {provider.languages.join(', ')}
                         </div>
                       </div>
                     </div>
@@ -435,26 +468,26 @@ export const ProviderLandingPage = ({ providerSlug }: ProviderLandingPageProps) 
               </Card>
 
               {/* Social Links */}
-              {((provider as any).website_url || (provider as any).linkedin_url || (provider as any).twitter_url) && (
+              {(provider.website_url || provider.linkedin_url || provider.twitter_url) && (
                 <Card>
                   <CardHeader>
                     <CardTitle>Connect Online</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-2">
-                    {(provider as any).website_url && (
-                      <a href={(provider as any).website_url} target="_blank" rel="noopener noreferrer" className="flex items-center text-blue-600 hover:text-blue-800">
+                    {provider.website_url && (
+                      <a href={provider.website_url} target="_blank" rel="noopener noreferrer" className="flex items-center text-blue-600 hover:text-blue-800">
                         <Globe className="h-4 w-4 mr-2" />
                         <span className="text-sm">Website</span>
                       </a>
                     )}
-                    {(provider as any).linkedin_url && (
-                      <a href={(provider as any).linkedin_url} target="_blank" rel="noopener noreferrer" className="flex items-center text-blue-600 hover:text-blue-800">
+                    {provider.linkedin_url && (
+                      <a href={provider.linkedin_url} target="_blank" rel="noopener noreferrer" className="flex items-center text-blue-600 hover:text-blue-800">
                         <Linkedin className="h-4 w-4 mr-2" />
                         <span className="text-sm">LinkedIn</span>
                       </a>
                     )}
-                    {(provider as any).twitter_url && (
-                      <a href={(provider as any).twitter_url} target="_blank" rel="noopener noreferrer" className="flex items-center text-blue-600 hover:text-blue-800">
+                    {provider.twitter_url && (
+                      <a href={provider.twitter_url} target="_blank" rel="noopener noreferrer" className="flex items-center text-blue-600 hover:text-blue-800">
                         <Twitter className="h-4 w-4 mr-2" />
                         <span className="text-sm">Twitter</span>
                       </a>
