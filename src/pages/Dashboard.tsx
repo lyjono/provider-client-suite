@@ -31,7 +31,19 @@ const Dashboard = () => {
       try {
         const { data: clientData, error } = await supabase
           .from('clients')
-          .select('*')
+          .select(`
+            *,
+            providers!inner(
+              id,
+              first_name,
+              last_name,
+              company_name,
+              provider_slug,
+              email,
+              bio,
+              profile_image_url
+            )
+          `)
           .eq('user_id', user.id);
         
         if (error) {
@@ -40,31 +52,7 @@ const Dashboard = () => {
         }
         
         console.log('Client query result:', clientData);
-        
-        if (!clientData || clientData.length === 0) {
-          return [];
-        }
-        
-        const clientsWithProviders = await Promise.all(
-          clientData.map(async (client) => {
-            if (client.provider_id) {
-              try {
-                const { data: providerData } = await supabase
-                  .from('providers')
-                  .select('*')
-                  .eq('id', client.provider_id)
-                  .single();
-                return { ...client, providers: providerData };
-              } catch (error) {
-                console.warn('Provider lookup for client failed:', error);
-                return { ...client, providers: null };
-              }
-            }
-            return { ...client, providers: null };
-          })
-        );
-        
-        return clientsWithProviders;
+        return clientData || [];
       } catch (error) {
         console.error('Client query failed:', error);
         return [];
@@ -99,51 +87,11 @@ const Dashboard = () => {
     enabled: !!user?.id && (!client || client.length === 0),
   });
 
-  // Check if current user is already connected to the provider from the slug
-  const { data: existingConnection } = useQuery({
-    queryKey: ['existing-provider-connection', user?.id, providerSlug],
-    queryFn: async () => {
-      if (!user?.id || !providerSlug) return null;
-      
-      try {
-        // Get provider by slug - simplified query
-        const { data: providerData, error: providerError } = await supabase
-          .from('providers')
-          .select('id, provider_slug')
-          .eq('provider_slug', providerSlug);
-        
-        if (providerError) {
-          console.error('Provider lookup error:', providerError);
-          return null;
-        }
-        
-        console.log('Provider data for slug:', providerData);
-        
-        if (!providerData || providerData.length === 0) return null;
-        
-        const provider = providerData[0];
-        
-        // Check if user is already connected to this provider
-        const { data: clientData, error: clientError } = await supabase
-          .from('clients')
-          .select('*')
-          .eq('user_id', user.id)
-          .eq('provider_id', provider.id);
-        
-        if (clientError) {
-          console.error('Existing connection error:', clientError);
-          return null;
-        }
-        
-        console.log('Existing connection check:', clientData);
-        return clientData && clientData.length > 0 ? clientData[0] : null;
-      } catch (error) {
-        console.error('Connection check failed:', error);
-        return null;
-      }
-    },
-    enabled: !!user?.id && !!providerSlug,
-  });
+  // Helper function to check if user is connected to the current provider
+  const isConnectedToCurrentProvider = () => {
+    if (!providerSlug || !client || client.length === 0) return false;
+    return client.some(c => c.providers?.provider_slug === providerSlug);
+  };
 
   useEffect(() => {
     // Show landing page logic
@@ -151,15 +99,11 @@ const Dashboard = () => {
       if (!user) {
         // Not logged in - show landing page
         setShowLandingPage(true);
-      } else if (existingConnection) {
-        // User is logged in and already connected - don't show landing page
-        setShowLandingPage(false);
       } else if (client && client.length > 0) {
-        // User has existing client records - check if connected to this specific provider
-        const isConnectedToThisProvider = client.some(c => 
-          c.providers?.provider_slug === providerSlug
-        );
-        setShowLandingPage(!isConnectedToThisProvider);
+        // User has client records - check if connected to this specific provider
+        const isConnected = isConnectedToCurrentProvider();
+        console.log('Is connected to current provider:', isConnected);
+        setShowLandingPage(!isConnected);
       } else {
         // User is logged in but has no client records - show landing page
         setShowLandingPage(true);
@@ -167,7 +111,7 @@ const Dashboard = () => {
     } else {
       setShowLandingPage(false);
     }
-  }, [providerSlug, isDemoClient, user, existingConnection, client]);
+  }, [providerSlug, isDemoClient, user, client]);
 
   if (clientLoading || ((!client || client.length === 0) && providerLoading)) {
     return (
@@ -182,13 +126,7 @@ const Dashboard = () => {
   console.log('  client.length:', client?.length);
   console.log('  provider:', provider);
   console.log('  showLandingPage:', showLandingPage);
-  console.log('  existingConnection:', existingConnection);
-
-  // Helper function to check if user is connected to the current provider
-  const isConnectedToCurrentProvider = () => {
-    if (!providerSlug || !client || client.length === 0) return false;
-    return client.some(c => c.providers?.provider_slug === providerSlug);
-  };
+  console.log('  isConnectedToCurrentProvider:', isConnectedToCurrentProvider());
 
   return (
     <AuthGuard>
@@ -206,7 +144,7 @@ const Dashboard = () => {
         )}
         
         {/* Client onboarding flow - for authenticated users who want to connect to a provider but aren't connected yet */}
-        {!isDemoClient && !showLandingPage && providerSlug && user && !existingConnection && !isConnectedToCurrentProvider() && (
+        {!isDemoClient && !showLandingPage && providerSlug && user && !isConnectedToCurrentProvider() && (
           <ClientOnboarding providerSlug={providerSlug} />
         )}
         
@@ -216,7 +154,7 @@ const Dashboard = () => {
         )}
         
         {/* If user is connected to the provider, show client dashboard */}
-        {!isDemoClient && !showLandingPage && providerSlug && user && (existingConnection || isConnectedToCurrentProvider()) && (
+        {!isDemoClient && !showLandingPage && providerSlug && user && isConnectedToCurrentProvider() && (
           <ClientDashboard clients={client || []} />
         )}
         
