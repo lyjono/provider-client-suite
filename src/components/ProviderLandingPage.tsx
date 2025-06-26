@@ -49,25 +49,70 @@ export const ProviderLandingPage = ({ providerSlug }: ProviderLandingPageProps) 
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  // Fetch provider info with simplified query to avoid 406 errors
+  // Debug query to see all providers
+  const { data: allProviders } = useQuery({
+    queryKey: ['all-providers-debug'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('providers')
+        .select('provider_slug, first_name, last_name, company_name');
+      
+      console.log('All providers in database:', data);
+      console.log('Looking for slug:', providerSlug);
+      
+      if (error) {
+        console.error('Error fetching all providers:', error);
+      }
+      
+      return data;
+    },
+  });
+
+  // Fetch provider info with case-insensitive search and fallback
   const { data: provider, isLoading } = useQuery({
     queryKey: ['provider-landing', providerSlug],
     queryFn: async (): Promise<ExtendedProvider | null> => {
       try {
         console.log('Fetching provider with slug:', providerSlug);
         
-        // Start with basic provider data that we know exists
-        const { data: basicProvider, error: basicError } = await supabase
+        // First try exact match
+        let { data: basicProvider, error: basicError } = await supabase
           .from('providers')
           .select('*')
           .eq('provider_slug', providerSlug);
+
+        console.log('Exact match result:', basicProvider);
+
+        // If no exact match, try case-insensitive search
+        if (!basicProvider || basicProvider.length === 0) {
+          console.log('Trying case-insensitive search...');
+          const { data: caseInsensitiveResult } = await supabase
+            .from('providers')
+            .select('*')
+            .ilike('provider_slug', providerSlug);
+          
+          console.log('Case-insensitive result:', caseInsensitiveResult);
+          basicProvider = caseInsensitiveResult;
+        }
+
+        // If still no match, try searching by company name or name
+        if (!basicProvider || basicProvider.length === 0) {
+          console.log('Trying company name search...');
+          const { data: companySearchResult } = await supabase
+            .from('providers')
+            .select('*')
+            .or(`company_name.ilike.%${providerSlug}%,first_name.ilike.%${providerSlug}%,last_name.ilike.%${providerSlug}%`);
+          
+          console.log('Company/name search result:', companySearchResult);
+          basicProvider = companySearchResult;
+        }
 
         if (basicError) {
           console.error('Basic provider query error:', basicError);
           return null;
         }
 
-        console.log('Basic provider data:', basicProvider);
+        console.log('Final basic provider data:', basicProvider);
 
         if (!basicProvider || basicProvider.length === 0) {
           console.log('No provider found for slug:', providerSlug);
@@ -235,7 +280,23 @@ export const ProviderLandingPage = ({ providerSlug }: ProviderLandingPageProps) 
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
         <Card className="w-full max-w-md">
           <CardContent className="pt-6">
-            <p className="text-center text-red-600">Provider not found</p>
+            <p className="text-center text-red-600 mb-4">Provider not found</p>
+            <div className="text-sm text-gray-600">
+              <p>Looking for: <strong>{providerSlug}</strong></p>
+              {allProviders && allProviders.length > 0 && (
+                <div className="mt-4">
+                  <p className="font-medium">Available providers:</p>
+                  <ul className="mt-2 space-y-1">
+                    {allProviders.map((p, index) => (
+                      <li key={index} className="text-xs">
+                        • {p.provider_slug} ({p.first_name} {p.last_name}
+                        {p.company_name && ` - ${p.company_name}`})
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>
