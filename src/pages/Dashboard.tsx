@@ -19,7 +19,11 @@ const Dashboard = () => {
   const providerSlug = searchParams.get('provider');
   const isDemoClient = searchParams.get('demo-client') === 'true';
 
-  // Check if user is a client (always check this first for demo clients)
+  console.log('Dashboard - user:', user?.id);
+  console.log('Dashboard - providerSlug:', providerSlug);
+  console.log('Dashboard - isDemoClient:', isDemoClient);
+
+  // Check if user is a client
   const { data: client, isLoading: clientLoading } = useQuery({
     queryKey: ['client', user?.id],
     queryFn: async () => {
@@ -28,12 +32,13 @@ const Dashboard = () => {
         .from('clients')
         .select('*, providers!inner(*)')
         .eq('user_id', user.id);
+      console.log('Client query result:', data);
       return data || [];
     },
     enabled: !!user?.id,
   });
 
-  // Only check if user is a provider if they're not a demo client and don't have client records
+  // Only check if user is a provider if they don't have client records
   const { data: provider, isLoading: providerLoading } = useQuery({
     queryKey: ['provider', user?.id],
     queryFn: async () => {
@@ -43,9 +48,10 @@ const Dashboard = () => {
         .select('*')
         .eq('user_id', user.id)
         .single();
+      console.log('Provider query result:', data);
       return data;
     },
-    enabled: !!user?.id && !isDemoClient && (!client || client.length === 0),
+    enabled: !!user?.id && (!client || client.length === 0),
   });
 
   useEffect(() => {
@@ -55,7 +61,7 @@ const Dashboard = () => {
     }
   }, [providerSlug, client, isDemoClient]);
 
-  if (clientLoading || (!isDemoClient && providerLoading)) {
+  if (clientLoading || ((!client || client.length === 0) && providerLoading)) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
@@ -63,8 +69,15 @@ const Dashboard = () => {
     );
   }
 
-  // If user has client records, always show client dashboard
+  console.log('Dashboard - Final state:');
+  console.log('  client:', client);
+  console.log('  client.length:', client?.length);
+  console.log('  provider:', provider);
+  console.log('  showProviderPresentation:', showProviderPresentation);
+
+  // PRIORITY 1: If user has client records, ALWAYS show client dashboard
   if (client && client.length > 0) {
+    console.log('Rendering ClientDashboard');
     return (
       <AuthGuard>
         <div className="min-h-screen bg-gray-50">
