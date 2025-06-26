@@ -19,7 +19,21 @@ const Dashboard = () => {
   const providerSlug = searchParams.get('provider');
   const isDemoClient = searchParams.get('demo-client') === 'true';
 
-  // Only check if user is a provider if they didn't come through a provider link
+  // Check if user is a client (always check this first for demo clients)
+  const { data: client, isLoading: clientLoading } = useQuery({
+    queryKey: ['client', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data } = await supabase
+        .from('clients')
+        .select('*, providers!inner(*)')
+        .eq('user_id', user.id);
+      return data || [];
+    },
+    enabled: !!user?.id,
+  });
+
+  // Only check if user is a provider if they're not a demo client and don't have client records
   const { data: provider, isLoading: providerLoading } = useQuery({
     queryKey: ['provider', user?.id],
     queryFn: async () => {
@@ -31,31 +45,17 @@ const Dashboard = () => {
         .single();
       return data;
     },
-    enabled: !!user?.id && !providerSlug && !isDemoClient,
-  });
-
-  // Check if user is a client (always check this unless it's demo mode)
-  const { data: client, isLoading: clientLoading } = useQuery({
-    queryKey: ['client', user?.id],
-    queryFn: async () => {
-      if (!user?.id) return null;
-      const { data } = await supabase
-        .from('clients')
-        .select('*, providers!inner(*)')
-        .eq('user_id', user.id);
-      return data || [];
-    },
-    enabled: !!user?.id && !isDemoClient,
+    enabled: !!user?.id && !isDemoClient && (!client || client.length === 0),
   });
 
   useEffect(() => {
-    // If user came via provider link, show provider presentation first
-    if (providerSlug && !client?.length && !providerLoading && !clientLoading && !isDemoClient) {
+    // If user came via provider link and is not a client, show provider presentation first
+    if (providerSlug && (!client || client.length === 0) && !isDemoClient) {
       setShowProviderPresentation(true);
     }
-  }, [providerSlug, client, providerLoading, clientLoading, isDemoClient]);
+  }, [providerSlug, client, isDemoClient]);
 
-  if ((providerLoading || clientLoading) && !isDemoClient) {
+  if (clientLoading || (!isDemoClient && providerLoading)) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
@@ -67,7 +67,7 @@ const Dashboard = () => {
     <AuthGuard>
       <div className="min-h-screen bg-gray-50">
         {/* Demo client onboarding flow - simple registration without provider */}
-        {isDemoClient && (
+        {isDemoClient && (!client || client.length === 0) && (
           <DemoClientOnboarding />
         )}
         
@@ -93,7 +93,7 @@ const Dashboard = () => {
         {!isDemoClient && !providerSlug && provider && <ProviderDashboard provider={provider} />}
         
         {/* Client dashboard - handles multiple providers */}
-        {!isDemoClient && client && client.length > 0 && <ClientDashboard clients={client} />}
+        {client && client.length > 0 && <ClientDashboard clients={client} />}
       </div>
     </AuthGuard>
   );
