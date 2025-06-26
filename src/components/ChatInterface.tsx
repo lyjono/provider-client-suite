@@ -8,10 +8,11 @@ import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { MessageCircle, Send } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/useAuth';
 
 interface ChatInterfaceProps {
   userType: 'provider' | 'client';
-  userId: string;
+  userId: string; // This is the provider/client record ID, not the auth user ID
 }
 
 interface Message {
@@ -49,20 +50,26 @@ export const ChatInterface = ({ userType, userId }: ChatInterfaceProps) => {
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
+  const { user } = useAuth();
 
-  console.log('ChatInterface - userType:', userType, 'userId:', userId);
+  console.log('ChatInterface - userType:', userType, 'userId:', userId, 'authUser:', user?.id);
 
   // Create or find conversation
   const createOrFindConversation = async (clientId: string, providerId: string) => {
     console.log('Creating/finding conversation for client:', clientId, 'provider:', providerId);
     
     // First check if conversation already exists
-    const { data: existingConversation } = await supabase
+    const { data: existingConversation, error: fetchError } = await supabase
       .from('conversations')
       .select('*')
       .eq('client_id', clientId)
       .eq('provider_id', providerId)
-      .single();
+      .maybeSingle();
+
+    if (fetchError) {
+      console.error('Error fetching conversation:', fetchError);
+      throw fetchError;
+    }
 
     if (existingConversation) {
       console.log('Found existing conversation:', existingConversation);
@@ -142,6 +149,7 @@ export const ChatInterface = ({ userType, userId }: ChatInterfaceProps) => {
         }
       }
     },
+    enabled: !!user, // Only run when user is authenticated
   });
 
   // Fetch messages for selected conversation
@@ -156,22 +164,29 @@ export const ChatInterface = ({ userType, userId }: ChatInterfaceProps) => {
         .order('created_at', { ascending: true });
       return data as Message[] || [];
     },
-    enabled: !!selectedConversation,
+    enabled: !!selectedConversation && !!user,
   });
 
   // Send message mutation
   const sendMessageMutation = useMutation({
     mutationFn: async (messageText: string) => {
-      if (!selectedConversation || !messageText.trim()) return;
+      if (!selectedConversation || !messageText.trim() || !user) {
+        throw new Error('Missing required data for sending message');
+      }
+
+      console.log('Sending message with auth user ID:', user.id);
 
       const { error } = await supabase.from('messages').insert({
         conversation_id: selectedConversation,
-        sender_id: userId,
+        sender_id: user.id, // Use the authenticated user's ID from Supabase auth
         content: messageText.trim(),
         message_type: 'text',
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error inserting message:', error);
+        throw error;
+      }
 
       // Update conversation's last_message_at
       await supabase
@@ -244,8 +259,12 @@ export const ChatInterface = ({ userType, userId }: ChatInterfaceProps) => {
   };
 
   const isMyMessage = (message: Message) => {
-    return message.sender_id === userId;
+    return message.sender_id === user?.id; // Compare with auth user ID
   };
+
+  if (!user) {
+    return <div className="text-center py-8">Please log in to access messages.</div>;
+  }
 
   if (conversationsLoading) {
     return <div className="text-center py-8">Loading conversations...</div>;
