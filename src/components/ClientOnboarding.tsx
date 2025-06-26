@@ -117,27 +117,53 @@ export const ClientOnboarding = ({ providerSlug }: ClientOnboardingProps) => {
       if (!provider) throw new Error('Provider not found');
       if (!user?.id) throw new Error('User not authenticated');
 
-      console.log('Creating client record with provider_id:', provider.id);
+      console.log('Connecting to provider with ID:', provider.id);
 
-      // Insert into clients table with proper provider_id
-      const { error } = await supabase.from('clients').insert({
-        user_id: user.id,
-        provider_id: provider.id, // This is the key fix - ensuring provider_id is set
-        email: formData.email,
-        first_name: formData.firstName,
-        last_name: formData.lastName,
-        phone: formData.phone || null,
-        address: formData.address || null,
-        city_id: formData.cityId || null,
-        country_id: formData.countryId || null,
-      });
+      if (existingClient) {
+        // Update existing client record with new provider connection
+        console.log('Updating existing client record with provider_id:', provider.id);
+        
+        const { error } = await supabase
+          .from('clients')
+          .update({
+            provider_id: provider.id,
+            email: formData.email,
+            first_name: formData.firstName,
+            last_name: formData.lastName,
+            phone: formData.phone || null,
+            address: formData.address || null,
+            city_id: formData.cityId || null,
+            country_id: formData.countryId || null,
+          })
+          .eq('id', existingClient.id);
 
-      if (error) {
-        console.error('Database error:', error);
-        throw error;
+        if (error) {
+          console.error('Database error:', error);
+          throw error;
+        }
+      } else {
+        // Create new client record if none exists
+        console.log('Creating new client record with provider_id:', provider.id);
+        
+        const { error } = await supabase.from('clients').insert({
+          user_id: user.id,
+          provider_id: provider.id,
+          email: formData.email,
+          first_name: formData.firstName,
+          last_name: formData.lastName,
+          phone: formData.phone || null,
+          address: formData.address || null,
+          city_id: formData.cityId || null,
+          country_id: formData.countryId || null,
+        });
+
+        if (error) {
+          console.error('Database error:', error);
+          throw error;
+        }
       }
 
-      console.log('Client record created successfully');
+      console.log('Client connection successful');
 
       toast({
         title: "Connection successful!",
@@ -147,7 +173,7 @@ export const ClientOnboarding = ({ providerSlug }: ClientOnboardingProps) => {
       // Refresh the page to load the client dashboard
       window.location.reload();
     } catch (error: any) {
-      console.error('Error creating client record:', error);
+      console.error('Error creating connection:', error);
       toast({
         title: "Error creating connection",
         description: error.message,
