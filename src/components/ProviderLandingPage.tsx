@@ -354,11 +354,11 @@ export const ProviderLandingPage = ({ providerSlug }: ProviderLandingPageProps) 
                         <span className="text-sm">{provider.phone}</span>
                       </div>
                     )}
-                    {(provider.cities?.name || provider.countries?.name) && (
+                    {((provider as any).cities?.name || (provider as any).countries?.name) && (
                       <div className="flex items-center">
                         <MapPin className="h-4 w-4 text-gray-500 mr-3" />
                         <span className="text-sm">
-                          {provider.cities?.name}{provider.cities?.name && provider.countries?.name ? ', ' : ''}{provider.countries?.name}
+                          {(provider as any).cities?.name}{(provider as any).cities?.name && (provider as any).countries?.name ? ', ' : ''}{(provider as any).countries?.name}
                         </span>
                       </div>
                     )}
@@ -367,7 +367,7 @@ export const ProviderLandingPage = ({ providerSlug }: ProviderLandingPageProps) 
               </Card>
 
               {/* Pricing */}
-              {(provider.hourly_rate || provider.consultation_fee) && (
+              {((provider as any).hourly_rate || (provider as any).consultation_fee) && (
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center">
@@ -376,16 +376,16 @@ export const ProviderLandingPage = ({ providerSlug }: ProviderLandingPageProps) 
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    {provider.consultation_fee && (
+                    {(provider as any).consultation_fee && (
                       <div className="flex justify-between">
                         <span>Initial Consultation</span>
-                        <span className="font-semibold">${provider.consultation_fee}</span>
+                        <span className="font-semibold">${(provider as any).consultation_fee}</span>
                       </div>
                     )}
-                    {provider.hourly_rate && (
+                    {(provider as any).hourly_rate && (
                       <div className="flex justify-between">
                         <span>Hourly Rate</span>
-                        <span className="font-semibold">${provider.hourly_rate}/hr</span>
+                        <span className="font-semibold">${(provider as any).hourly_rate}/hr</span>
                       </div>
                     )}
                   </CardContent>
@@ -398,35 +398,35 @@ export const ProviderLandingPage = ({ providerSlug }: ProviderLandingPageProps) 
                   <CardTitle>Professional Details</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {provider.education && (
+                  {(provider as any).education && (
                     <div className="flex items-start">
                       <BookOpen className="h-4 w-4 text-gray-500 mr-3 mt-1" />
                       <div>
                         <div className="font-medium text-sm">Education</div>
-                        <div className="text-sm text-gray-600">{provider.education}</div>
+                        <div className="text-sm text-gray-600">{(provider as any).education}</div>
                       </div>
                     </div>
                   )}
                   
-                  {provider.certifications && provider.certifications.length > 0 && (
+                  {(provider as any).certifications && (provider as any).certifications.length > 0 && (
                     <div className="flex items-start">
                       <Award className="h-4 w-4 text-gray-500 mr-3 mt-1" />
                       <div>
                         <div className="font-medium text-sm">Certifications</div>
                         <div className="text-sm text-gray-600">
-                          {provider.certifications.join(', ')}
+                          {(provider as any).certifications.join(', ')}
                         </div>
                       </div>
                     </div>
                   )}
                   
-                  {provider.languages && provider.languages.length > 0 && (
+                  {(provider as any).languages && (provider as any).languages.length > 0 && (
                     <div className="flex items-start">
                       <Languages className="h-4 w-4 text-gray-500 mr-3 mt-1" />
                       <div>
                         <div className="font-medium text-sm">Languages</div>
                         <div className="text-sm text-gray-600">
-                          {provider.languages.join(', ')}
+                          {(provider as any).languages.join(', ')}
                         </div>
                       </div>
                     </div>
@@ -435,26 +435,26 @@ export const ProviderLandingPage = ({ providerSlug }: ProviderLandingPageProps) 
               </Card>
 
               {/* Social Links */}
-              {(provider.website_url || provider.linkedin_url || provider.twitter_url) && (
+              {((provider as any).website_url || (provider as any).linkedin_url || (provider as any).twitter_url) && (
                 <Card>
                   <CardHeader>
                     <CardTitle>Connect Online</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-2">
-                    {provider.website_url && (
-                      <a href={provider.website_url} target="_blank" rel="noopener noreferrer" className="flex items-center text-blue-600 hover:text-blue-800">
+                    {(provider as any).website_url && (
+                      <a href={(provider as any).website_url} target="_blank" rel="noopener noreferrer" className="flex items-center text-blue-600 hover:text-blue-800">
                         <Globe className="h-4 w-4 mr-2" />
                         <span className="text-sm">Website</span>
                       </a>
                     )}
-                    {provider.linkedin_url && (
-                      <a href={provider.linkedin_url} target="_blank" rel="noopener noreferrer" className="flex items-center text-blue-600 hover:text-blue-800">
+                    {(provider as any).linkedin_url && (
+                      <a href={(provider as any).linkedin_url} target="_blank" rel="noopener noreferrer" className="flex items-center text-blue-600 hover:text-blue-800">
                         <Linkedin className="h-4 w-4 mr-2" />
                         <span className="text-sm">LinkedIn</span>
                       </a>
                     )}
-                    {provider.twitter_url && (
-                      <a href={provider.twitter_url} target="_blank" rel="noopener noreferrer" className="flex items-center text-blue-600 hover:text-blue-800">
+                    {(provider as any).twitter_url && (
+                      <a href={(provider as any).twitter_url} target="_blank" rel="noopener noreferrer" className="flex items-center text-blue-600 hover:text-blue-800">
                         <Twitter className="h-4 w-4 mr-2" />
                         <span className="text-sm">Twitter</span>
                       </a>
