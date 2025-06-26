@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -25,6 +25,36 @@ export const ClientOnboarding = ({ providerSlug }: ClientOnboardingProps) => {
     cityId: '',
     countryId: '',
   });
+
+  // Fetch existing client data for this user
+  const { data: existingClient } = useQuery({
+    queryKey: ['existing-client-data', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data } = await supabase
+        .from('clients')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      return data;
+    },
+    enabled: !!user?.id,
+  });
+
+  // Pre-populate form with existing client data
+  useEffect(() => {
+    if (existingClient) {
+      setFormData({
+        firstName: existingClient.first_name || '',
+        lastName: existingClient.last_name || '',
+        email: existingClient.email || user?.email || '',
+        phone: existingClient.phone || '',
+        address: existingClient.address || '',
+        cityId: existingClient.city_id || '',
+        countryId: existingClient.country_id || '',
+      });
+    }
+  }, [existingClient, user?.email]);
 
   // Fetch provider info
   const { data: provider } = useQuery({
@@ -110,7 +140,7 @@ export const ClientOnboarding = ({ providerSlug }: ClientOnboardingProps) => {
       console.log('Client record created successfully');
 
       toast({
-        title: "Registration successful!",
+        title: "Connection successful!",
         description: `You're now connected with ${provider.first_name} ${provider.last_name}`,
       });
 
@@ -119,7 +149,7 @@ export const ClientOnboarding = ({ providerSlug }: ClientOnboardingProps) => {
     } catch (error: any) {
       console.error('Error creating client record:', error);
       toast({
-        title: "Error creating profile",
+        title: "Error creating connection",
         description: error.message,
         variant: "destructive",
       });
@@ -159,6 +189,11 @@ export const ClientOnboarding = ({ providerSlug }: ClientOnboardingProps) => {
             {provider.company_name && `${provider.company_name} - `}
             {provider.expertise_areas?.name}
           </p>
+          {existingClient && (
+            <p className="text-sm text-blue-600 bg-blue-50 p-2 rounded">
+              We've pre-filled your information. You can update any details before connecting.
+            </p>
+          )}
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -226,7 +261,7 @@ export const ClientOnboarding = ({ providerSlug }: ClientOnboardingProps) => {
             </div>
 
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? 'Registering...' : 'Connect with Provider'}
+              {loading ? 'Connecting...' : `Connect with ${provider.first_name} ${provider.last_name}`}
             </Button>
           </form>
         </CardContent>
