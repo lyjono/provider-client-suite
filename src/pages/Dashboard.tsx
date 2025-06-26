@@ -83,9 +83,11 @@ const Dashboard = () => {
       // Get provider by slug
       const { data: providerData } = await supabase
         .from('providers')
-        .select('id')
+        .select('id, provider_slug')
         .eq('provider_slug', providerSlug)
         .single();
+      
+      console.log('Provider data for slug:', providerData);
       
       if (!providerData) return null;
       
@@ -97,23 +99,36 @@ const Dashboard = () => {
         .eq('provider_id', providerData.id)
         .single();
       
+      console.log('Existing connection check:', clientData);
       return clientData;
     },
     enabled: !!user?.id && !!providerSlug,
   });
 
   useEffect(() => {
-    // Show landing page for provider links, but handle different scenarios
+    // Show landing page logic
     if (providerSlug && !isDemoClient) {
-      // If user is authenticated and already connected, don't show landing page
-      if (user && existingConnection) {
+      if (!user) {
+        // Not logged in - show landing page
+        setShowLandingPage(true);
+      } else if (existingConnection) {
+        // User is logged in and already connected - don't show landing page
         setShowLandingPage(false);
+      } else if (client && client.length > 0) {
+        // User has client records but not connected to this specific provider
+        // Check if any of their client records are for this provider
+        const isConnectedToThisProvider = client.some(c => 
+          c.providers?.provider_slug === providerSlug
+        );
+        setShowLandingPage(!isConnectedToThisProvider);
       } else {
-        // Show landing page for new visitors or unconnected users
+        // User is logged in but has no client records - show landing page
         setShowLandingPage(true);
       }
+    } else {
+      setShowLandingPage(false);
     }
-  }, [providerSlug, isDemoClient, user, existingConnection]);
+  }, [providerSlug, isDemoClient, user, existingConnection, client]);
 
   if (clientLoading || ((!client || client.length === 0) && providerLoading)) {
     return (
@@ -138,14 +153,14 @@ const Dashboard = () => {
           <DemoClientOnboarding />
         )}
         
-        {/* Show landing page for provider links (unless user is already connected) */}
+        {/* Show landing page for provider links - only for non-authenticated users or users not connected to this provider */}
         {!isDemoClient && showLandingPage && providerSlug && (
           <ProviderLandingPage 
             providerSlug={providerSlug}
           />
         )}
         
-        {/* Client onboarding flow - for authenticated users who want to connect to a provider */}
+        {/* Client onboarding flow - for authenticated users who want to connect to a provider but aren't connected yet */}
         {!isDemoClient && !showLandingPage && providerSlug && user && !existingConnection && (
           <ClientOnboarding providerSlug={providerSlug} />
         )}
@@ -156,7 +171,7 @@ const Dashboard = () => {
         )}
         
         {/* If user is connected to the provider, show client dashboard */}
-        {!isDemoClient && providerSlug && user && existingConnection && (
+        {!isDemoClient && !showLandingPage && (providerSlug && user && (existingConnection || (client && client.some(c => c.providers?.provider_slug === providerSlug)))) && (
           <ClientDashboard clients={client || []} />
         )}
         
