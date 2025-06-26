@@ -28,32 +28,42 @@ const Dashboard = () => {
     queryKey: ['client', user?.id],
     queryFn: async () => {
       if (!user?.id) return null;
-      const { data: clientData } = await supabase
-        .from('clients')
-        .select('*')
-        .eq('user_id', user.id);
-      
-      console.log('Client query result:', clientData);
-      
-      if (!clientData || clientData.length === 0) {
+      try {
+        const { data: clientData, error } = await supabase
+          .from('clients')
+          .select('*')
+          .eq('user_id', user.id);
+        
+        if (error) {
+          console.error('Client query error:', error);
+          return [];
+        }
+        
+        console.log('Client query result:', clientData);
+        
+        if (!clientData || clientData.length === 0) {
+          return [];
+        }
+        
+        const clientsWithProviders = await Promise.all(
+          clientData.map(async (client) => {
+            if (client.provider_id) {
+              const { data: providerData } = await supabase
+                .from('providers')
+                .select('*')
+                .eq('id', client.provider_id)
+                .single();
+              return { ...client, providers: providerData };
+            }
+            return { ...client, providers: null };
+          })
+        );
+        
+        return clientsWithProviders;
+      } catch (error) {
+        console.error('Client query failed:', error);
         return [];
       }
-      
-      const clientsWithProviders = await Promise.all(
-        clientData.map(async (client) => {
-          if (client.provider_id) {
-            const { data: providerData } = await supabase
-              .from('providers')
-              .select('*')
-              .eq('id', client.provider_id)
-              .single();
-            return { ...client, providers: providerData };
-          }
-          return { ...client, providers: null };
-        })
-      );
-      
-      return clientsWithProviders;
     },
     enabled: !!user?.id,
   });
@@ -63,13 +73,23 @@ const Dashboard = () => {
     queryKey: ['provider', user?.id],
     queryFn: async () => {
       if (!user?.id) return null;
-      const { data } = await supabase
-        .from('providers')
-        .select('*')
-        .eq('user_id', user.id)
-        .single();
-      console.log('Provider query result:', data);
-      return data;
+      try {
+        const { data, error } = await supabase
+          .from('providers')
+          .select('*')
+          .eq('user_id', user.id)
+          .single();
+        
+        if (error && error.code !== 'PGRST116') {
+          console.error('Provider query error:', error);
+        }
+        
+        console.log('Provider query result:', data);
+        return data;
+      } catch (error) {
+        console.error('Provider query failed:', error);
+        return null;
+      }
     },
     enabled: !!user?.id && (!client || client.length === 0),
   });
@@ -80,27 +100,42 @@ const Dashboard = () => {
     queryFn: async () => {
       if (!user?.id || !providerSlug) return null;
       
-      // Get provider by slug
-      const { data: providerData } = await supabase
-        .from('providers')
-        .select('id, provider_slug')
-        .eq('provider_slug', providerSlug)
-        .single();
-      
-      console.log('Provider data for slug:', providerData);
-      
-      if (!providerData) return null;
-      
-      // Check if user is already connected to this provider
-      const { data: clientData } = await supabase
-        .from('clients')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('provider_id', providerData.id)
-        .single();
-      
-      console.log('Existing connection check:', clientData);
-      return clientData;
+      try {
+        // Get provider by slug
+        const { data: providerData, error: providerError } = await supabase
+          .from('providers')
+          .select('id, provider_slug')
+          .eq('provider_slug', providerSlug)
+          .maybeSingle();
+        
+        if (providerError) {
+          console.error('Provider lookup error:', providerError);
+          return null;
+        }
+        
+        console.log('Provider data for slug:', providerData);
+        
+        if (!providerData) return null;
+        
+        // Check if user is already connected to this provider
+        const { data: clientData, error: clientError } = await supabase
+          .from('clients')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('provider_id', providerData.id)
+          .maybeSingle();
+        
+        if (clientError) {
+          console.error('Existing connection error:', clientError);
+          return null;
+        }
+        
+        console.log('Existing connection check:', clientData);
+        return clientData;
+      } catch (error) {
+        console.error('Connection check failed:', error);
+        return null;
+      }
     },
     enabled: !!user?.id && !!providerSlug,
   });

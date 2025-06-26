@@ -17,53 +17,104 @@ export const ProviderLandingPage = ({ providerSlug }: ProviderLandingPageProps) 
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  // Fetch provider info with all related data
+  // Fetch provider info with error handling for new columns
   const { data: provider, isLoading } = useQuery({
     queryKey: ['provider-landing', providerSlug],
     queryFn: async () => {
-      const { data } = await supabase
-        .from('providers')
-        .select(`
-          *,
-          expertise_areas(name),
-          cities(name),
-          countries(name)
-        `)
-        .eq('provider_slug', providerSlug)
-        .single();
-      return data;
+      try {
+        // Start with basic provider data that we know exists
+        const { data: basicProvider, error: basicError } = await supabase
+          .from('providers')
+          .select(`
+            id, user_id, email, first_name, last_name, company_name, phone, address,
+            bio, profile_image_url, provider_slug, created_at, updated_at
+          `)
+          .eq('provider_slug', providerSlug)
+          .maybeSingle();
+
+        if (basicError) {
+          console.error('Basic provider query error:', basicError);
+          return null;
+        }
+
+        if (!basicProvider) {
+          return null;
+        }
+
+        // Try to get additional data with relations
+        try {
+          const { data: fullProvider } = await supabase
+            .from('providers')
+            .select(`
+              *,
+              expertise_areas(name),
+              cities(name),
+              countries(name)
+            `)
+            .eq('provider_slug', providerSlug)
+            .maybeSingle();
+
+          return fullProvider || basicProvider;
+        } catch (relationError) {
+          console.warn('Could not fetch provider relations, using basic data:', relationError);
+          return basicProvider;
+        }
+      } catch (error) {
+        console.error('Provider query failed:', error);
+        return null;
+      }
     },
   });
 
-  // Fetch testimonials
+  // Fetch testimonials with error handling
   const { data: testimonials } = useQuery({
     queryKey: ['testimonials', provider?.id],
     queryFn: async () => {
       if (!provider?.id) return [];
-      const { data } = await supabase
-        .from('testimonials')
-        .select('*')
-        .eq('provider_id', provider.id)
-        .eq('is_featured', true)
-        .order('created_at', { ascending: false })
-        .limit(3);
-      return data || [];
+      try {
+        const { data, error } = await supabase
+          .from('testimonials')
+          .select('*')
+          .eq('provider_id', provider.id)
+          .eq('is_featured', true)
+          .order('created_at', { ascending: false })
+          .limit(3);
+        
+        if (error) {
+          console.warn('Testimonials query error:', error);
+          return [];
+        }
+        return data || [];
+      } catch (error) {
+        console.warn('Testimonials query failed:', error);
+        return [];
+      }
     },
     enabled: !!provider?.id,
   });
 
-  // Fetch service packages
+  // Fetch service packages with error handling
   const { data: servicePackages } = useQuery({
     queryKey: ['service-packages', provider?.id],
     queryFn: async () => {
       if (!provider?.id) return [];
-      const { data } = await supabase
-        .from('service_packages')
-        .select('*')
-        .eq('provider_id', provider.id)
-        .eq('is_active', true)
-        .order('is_featured', { ascending: false });
-      return data || [];
+      try {
+        const { data, error } = await supabase
+          .from('service_packages')
+          .select('*')
+          .eq('provider_id', provider.id)
+          .eq('is_active', true)
+          .order('is_featured', { ascending: false });
+        
+        if (error) {
+          console.warn('Service packages query error:', error);
+          return [];
+        }
+        return data || [];
+      } catch (error) {
+        console.warn('Service packages query failed:', error);
+        return [];
+      }
     },
     enabled: !!provider?.id,
   });
@@ -73,13 +124,23 @@ export const ProviderLandingPage = ({ providerSlug }: ProviderLandingPageProps) 
     queryKey: ['existing-client-connection', user?.id, provider?.id],
     queryFn: async () => {
       if (!user?.id || !provider?.id) return null;
-      const { data } = await supabase
-        .from('clients')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('provider_id', provider.id)
-        .single();
-      return data;
+      try {
+        const { data, error } = await supabase
+          .from('clients')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('provider_id', provider.id)
+          .maybeSingle();
+        
+        if (error) {
+          console.warn('Client connection check error:', error);
+          return null;
+        }
+        return data;
+      } catch (error) {
+        console.warn('Client connection check failed:', error);
+        return null;
+      }
     },
     enabled: !!user?.id && !!provider?.id,
   });
