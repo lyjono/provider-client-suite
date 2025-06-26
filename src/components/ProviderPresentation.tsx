@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, Phone, Mail, Building, User } from 'lucide-react';
+import { MapPin, Phone, Mail, Building, User, ArrowLeft } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
 
 interface ProviderPresentationProps {
   providerSlug: string;
@@ -13,6 +14,8 @@ interface ProviderPresentationProps {
 }
 
 export const ProviderPresentation = ({ providerSlug, onStartOnboarding }: ProviderPresentationProps) => {
+  const { user } = useAuth();
+
   // Fetch provider info
   const { data: provider, isLoading } = useQuery({
     queryKey: ['provider-by-slug', providerSlug],
@@ -30,6 +33,26 @@ export const ProviderPresentation = ({ providerSlug, onStartOnboarding }: Provid
       return data;
     },
   });
+
+  // Check if current user is already connected to this provider
+  const { data: existingClient } = useQuery({
+    queryKey: ['existing-client', user?.id, provider?.id],
+    queryFn: async () => {
+      if (!user?.id || !provider?.id) return null;
+      const { data } = await supabase
+        .from('clients')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('provider_id', provider.id)
+        .single();
+      return data;
+    },
+    enabled: !!user?.id && !!provider?.id,
+  });
+
+  const handleBackToDashboard = () => {
+    window.location.href = '/dashboard';
+  };
 
   if (isLoading) {
     return (
@@ -57,6 +80,20 @@ export const ProviderPresentation = ({ providerSlug, onStartOnboarding }: Provid
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <div className="container mx-auto px-4 py-12">
         <div className="max-w-4xl mx-auto">
+          {/* Back button for authenticated users */}
+          {user && (
+            <div className="mb-6">
+              <Button 
+                variant="outline" 
+                onClick={handleBackToDashboard}
+                className="flex items-center space-x-2"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                <span>Back to Dashboard</span>
+              </Button>
+            </div>
+          )}
+
           {/* Hero Section */}
           <Card className="mb-8">
             <CardContent className="p-8">
@@ -142,19 +179,42 @@ export const ProviderPresentation = ({ providerSlug, onStartOnboarding }: Provid
           {/* Call to Action */}
           <Card>
             <CardContent className="p-8 text-center">
-              <h2 className="text-2xl font-bold text-gray-900 mb-4">
-                Ready to Connect?
-              </h2>
-              <p className="text-gray-600 mb-6 text-lg">
-                Join the platform to start working with {provider.first_name} and manage all your professional relationships in one place.
-              </p>
-              <Button 
-                onClick={onStartOnboarding}
-                size="lg"
-                className="text-lg px-8 py-3"
-              >
-                Get Started
-              </Button>
+              {existingClient ? (
+                <>
+                  <h2 className="text-2xl font-bold text-gray-900 mb-4">
+                    Welcome Back!
+                  </h2>
+                  <p className="text-gray-600 mb-6 text-lg">
+                    You're already connected with {provider.first_name}. You can manage your relationship from your dashboard.
+                  </p>
+                  <Button 
+                    onClick={handleBackToDashboard}
+                    size="lg"
+                    className="text-lg px-8 py-3"
+                  >
+                    Go to Dashboard
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <h2 className="text-2xl font-bold text-gray-900 mb-4">
+                    Ready to Connect?
+                  </h2>
+                  <p className="text-gray-600 mb-6 text-lg">
+                    {user 
+                      ? `Connect with ${provider.first_name} to start scheduling appointments and managing your professional relationship.`
+                      : `Join the platform to start working with ${provider.first_name} and manage all your professional relationships in one place.`
+                    }
+                  </p>
+                  <Button 
+                    onClick={onStartOnboarding}
+                    size="lg"
+                    className="text-lg px-8 py-3"
+                  >
+                    {user ? 'Connect Now' : 'Get Started'}
+                  </Button>
+                </>
+              )}
             </CardContent>
           </Card>
         </div>

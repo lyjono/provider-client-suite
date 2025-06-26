@@ -22,11 +22,12 @@ export const ProviderDashboard = ({ provider }: ProviderDashboardProps) => {
   const [activeTab, setActiveTab] = useState('clients');
 
   const copyProviderLink = () => {
+    // Use the provider_slug to create the link
     const link = `${window.location.origin}/dashboard?provider=${provider.provider_slug}`;
     navigator.clipboard.writeText(link);
     toast({
       title: "Link copied!",
-      description: "Share this link with your clients to let them register",
+      description: "Share this link with potential clients so they can connect with you",
     });
   };
 

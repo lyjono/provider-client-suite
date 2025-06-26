@@ -23,7 +23,7 @@ const Dashboard = () => {
   console.log('Dashboard - providerSlug:', providerSlug);
   console.log('Dashboard - isDemoClient:', isDemoClient);
 
-  // Check if user is a client - FIXED: Remove inner join requirement
+  // Check if user is a client
   const { data: client, isLoading: clientLoading } = useQuery({
     queryKey: ['client', user?.id],
     queryFn: async () => {
@@ -77,11 +77,12 @@ const Dashboard = () => {
   });
 
   useEffect(() => {
-    // If user came via provider link and is not a client, show provider presentation first
-    if (providerSlug && (!client || client.length === 0) && !isDemoClient) {
+    // If user came via provider link, always show provider presentation first
+    // This applies even if they are already a client or provider
+    if (providerSlug && !isDemoClient) {
       setShowProviderPresentation(true);
     }
-  }, [providerSlug, client, isDemoClient]);
+  }, [providerSlug, isDemoClient]);
 
   if (clientLoading || ((!client || client.length === 0) && providerLoading)) {
     return (
@@ -97,18 +98,6 @@ const Dashboard = () => {
   console.log('  provider:', provider);
   console.log('  showProviderPresentation:', showProviderPresentation);
 
-  // PRIORITY 1: If user has client records, ALWAYS show client dashboard
-  if (client && client.length > 0) {
-    console.log('Rendering ClientDashboard');
-    return (
-      <AuthGuard>
-        <div className="min-h-screen bg-gray-50">
-          <ClientDashboard clients={client} />
-        </div>
-      </AuthGuard>
-    );
-  }
-
   return (
     <AuthGuard>
       <div className="min-h-screen bg-gray-50">
@@ -117,7 +106,7 @@ const Dashboard = () => {
           <DemoClientOnboarding />
         )}
         
-        {/* Show provider presentation to potential clients */}
+        {/* Show provider presentation to anyone visiting a provider link */}
         {!isDemoClient && showProviderPresentation && providerSlug && (
           <ProviderPresentation 
             providerSlug={providerSlug} 
@@ -125,13 +114,18 @@ const Dashboard = () => {
           />
         )}
         
-        {/* Client onboarding flow - for users coming via provider link */}
+        {/* Client onboarding flow - for users coming via provider link who want to register */}
         {!isDemoClient && !showProviderPresentation && providerSlug && (
           <ClientOnboarding providerSlug={providerSlug} />
         )}
         
+        {/* If user has client records and no provider link, show client dashboard */}
+        {!isDemoClient && !providerSlug && client && client.length > 0 && (
+          <ClientDashboard clients={client} />
+        )}
+        
         {/* Provider onboarding flow - for users without provider slug who are not clients */}
-        {!isDemoClient && !providerSlug && !provider && (
+        {!isDemoClient && !providerSlug && !provider && (!client || client.length === 0) && (
           <ProviderOnboarding />
         )}
         
