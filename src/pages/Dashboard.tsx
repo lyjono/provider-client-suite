@@ -23,7 +23,7 @@ const Dashboard = () => {
   console.log('Dashboard - providerSlug:', providerSlug);
   console.log('Dashboard - isDemoClient:', isDemoClient);
 
-  // Check if user is a client
+  // Check if user is a client with their provider data
   const { data: client, isLoading: clientLoading } = useQuery({
     queryKey: ['client', user?.id],
     queryFn: async () => {
@@ -94,24 +94,19 @@ const Dashboard = () => {
   };
 
   useEffect(() => {
-    // Show landing page logic
+    // Show landing page logic - only for non-authenticated users
     if (providerSlug && !isDemoClient) {
       if (!user) {
         // Not logged in - show landing page
         setShowLandingPage(true);
-      } else if (client && client.length > 0) {
-        // User has client records - check if connected to this specific provider
-        const isConnected = isConnectedToCurrentProvider();
-        console.log('Is connected to current provider:', isConnected);
-        setShowLandingPage(!isConnected);
       } else {
-        // User is logged in but has no client records - show landing page
-        setShowLandingPage(true);
+        // User is logged in - don't show landing page, proceed with connection flow
+        setShowLandingPage(false);
       }
     } else {
       setShowLandingPage(false);
     }
-  }, [providerSlug, isDemoClient, user, client]);
+  }, [providerSlug, isDemoClient, user]);
 
   if (clientLoading || ((!client || client.length === 0) && providerLoading)) {
     return (
@@ -121,12 +116,14 @@ const Dashboard = () => {
     );
   }
 
+  const connectedToCurrentProvider = isConnectedToCurrentProvider();
+
   console.log('Dashboard - Final state:');
   console.log('  client:', client);
   console.log('  client.length:', client?.length);
   console.log('  provider:', provider);
   console.log('  showLandingPage:', showLandingPage);
-  console.log('  isConnectedToCurrentProvider:', isConnectedToCurrentProvider());
+  console.log('  isConnectedToCurrentProvider:', connectedToCurrentProvider);
 
   return (
     <AuthGuard>
@@ -136,15 +133,15 @@ const Dashboard = () => {
           <DemoClientOnboarding />
         )}
         
-        {/* Show landing page for provider links */}
-        {!isDemoClient && showLandingPage && providerSlug && (
+        {/* Show landing page for provider links - only for non-authenticated users */}
+        {!isDemoClient && showLandingPage && providerSlug && !user && (
           <ProviderLandingPage 
             providerSlug={providerSlug}
           />
         )}
         
-        {/* Client onboarding flow - for authenticated users who want to connect to a provider but aren't connected yet */}
-        {!isDemoClient && !showLandingPage && providerSlug && user && !isConnectedToCurrentProvider() && (
+        {/* Client onboarding flow - for authenticated users who want to connect to a provider */}
+        {!isDemoClient && providerSlug && user && !connectedToCurrentProvider && (
           <ClientOnboarding providerSlug={providerSlug} />
         )}
         
@@ -154,7 +151,7 @@ const Dashboard = () => {
         )}
         
         {/* If user is connected to the provider, show client dashboard */}
-        {!isDemoClient && !showLandingPage && providerSlug && user && isConnectedToCurrentProvider() && (
+        {!isDemoClient && providerSlug && user && connectedToCurrentProvider && (
           <ClientDashboard clients={client || []} />
         )}
         
