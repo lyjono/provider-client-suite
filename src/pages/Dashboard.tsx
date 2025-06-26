@@ -23,17 +23,39 @@ const Dashboard = () => {
   console.log('Dashboard - providerSlug:', providerSlug);
   console.log('Dashboard - isDemoClient:', isDemoClient);
 
-  // Check if user is a client
+  // Check if user is a client - FIXED: Remove inner join requirement
   const { data: client, isLoading: clientLoading } = useQuery({
     queryKey: ['client', user?.id],
     queryFn: async () => {
       if (!user?.id) return null;
-      const { data } = await supabase
+      // First get client records without requiring provider relationship
+      const { data: clientData } = await supabase
         .from('clients')
-        .select('*, providers!inner(*)')
+        .select('*')
         .eq('user_id', user.id);
-      console.log('Client query result:', data);
-      return data || [];
+      
+      console.log('Client query result:', clientData);
+      
+      if (!clientData || clientData.length === 0) {
+        return [];
+      }
+      
+      // Then get provider data for each client separately
+      const clientsWithProviders = await Promise.all(
+        clientData.map(async (client) => {
+          if (client.provider_id) {
+            const { data: providerData } = await supabase
+              .from('providers')
+              .select('*')
+              .eq('id', client.provider_id)
+              .single();
+            return { ...client, providers: providerData };
+          }
+          return { ...client, providers: null };
+        })
+      );
+      
+      return clientsWithProviders;
     },
     enabled: !!user?.id,
   });
