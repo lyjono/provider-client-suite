@@ -50,21 +50,97 @@ export const ChatInterface = ({ userType, userId }: ChatInterfaceProps) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
 
-  // Fetch conversations
+  console.log('ChatInterface - userType:', userType, 'userId:', userId);
+
+  // Create or find conversation
+  const createOrFindConversation = async (clientId: string, providerId: string) => {
+    console.log('Creating/finding conversation for client:', clientId, 'provider:', providerId);
+    
+    // First check if conversation already exists
+    const { data: existingConversation } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq('client_id', clientId)
+      .eq('provider_id', providerId)
+      .single();
+
+    if (existingConversation) {
+      console.log('Found existing conversation:', existingConversation);
+      return existingConversation;
+    }
+
+    // Create new conversation
+    const { data: newConversation, error } = await supabase
+      .from('conversations')
+      .insert({
+        client_id: clientId,
+        provider_id: providerId,
+        last_message_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error creating conversation:', error);
+      throw error;
+    }
+
+    console.log('Created new conversation:', newConversation);
+    return newConversation;
+  };
+
+  // Fetch conversations based on user type
   const { data: conversations, isLoading: conversationsLoading } = useQuery({
     queryKey: ['conversations', userId, userType],
     queryFn: async () => {
-      const column = userType === 'provider' ? 'provider_id' : 'client_id';
-      const { data } = await supabase
-        .from('conversations')
-        .select(`
-          *,
-          providers(first_name, last_name, company_name, profile_image_url),
-          clients(first_name, last_name)
-        `)
-        .eq(column, userId)
-        .order('last_message_at', { ascending: false });
-      return data as Conversation[] || [];
+      console.log('Fetching conversations for:', userType, userId);
+      
+      if (userType === 'provider') {
+        // For providers, get all conversations where they are the provider
+        const { data } = await supabase
+          .from('conversations')
+          .select(`
+            *,
+            clients(first_name, last_name)
+          `)
+          .eq('provider_id', userId)
+          .order('last_message_at', { ascending: false });
+        
+        console.log('Provider conversations:', data);
+        return data as Conversation[] || [];
+      } else {
+        // For clients, we need to get the client record first, then find conversations
+        const { data: clientRecord } = await supabase
+          .from('clients')
+          .select('*')
+          .eq('id', userId)
+          .single();
+
+        if (!clientRecord || !clientRecord.provider_id) {
+          console.log('No client record or provider found for client:', userId);
+          return [];
+        }
+
+        // Check if conversation exists, if not create it
+        try {
+          const conversation = await createOrFindConversation(userId, clientRecord.provider_id);
+          
+          // Now fetch the conversation with provider details
+          const { data } = await supabase
+            .from('conversations')
+            .select(`
+              *,
+              providers(first_name, last_name, company_name, profile_image_url)
+            `)
+            .eq('id', conversation.id);
+          
+          console.log('Client conversations:', data);
+          return data as Conversation[] || [];
+        } catch (error) {
+          console.error('Error creating/finding conversation:', error);
+          return [];
+        }
+      }
     },
   });
 
