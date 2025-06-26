@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AuthGuard } from '@/components/AuthGuard';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 
 const Auth = () => {
   const [email, setEmail] = useState('');
@@ -14,7 +15,20 @@ const Auth = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
-  const { signIn, signUp } = useAuth();
+  const { signIn, signUp, user } = useAuth();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+
+  const redirectTo = searchParams.get('redirect');
+
+  useEffect(() => {
+    // If user is authenticated and there's a redirect, navigate to it
+    if (user && redirectTo) {
+      navigate(decodeURIComponent(redirectTo));
+    } else if (user && !redirectTo) {
+      navigate('/dashboard');
+    }
+  }, [user, redirectTo, navigate]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,7 +68,10 @@ const Auth = () => {
           <CardHeader>
             <CardTitle className="text-center">Welcome to Provider Platform</CardTitle>
             <CardDescription className="text-center">
-              Sign in to your account or create a new one
+              {redirectTo?.includes('demo-client=true') 
+                ? 'Sign in or create an account to continue as a client'
+                : 'Sign in to your account or create a new one'
+              }
             </CardDescription>
           </CardHeader>
           <CardContent>

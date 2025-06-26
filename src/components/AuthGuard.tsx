@@ -1,6 +1,6 @@
 
 import { useAuth } from '@/hooks/useAuth';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
 
 interface AuthGuardProps {
@@ -11,16 +11,19 @@ interface AuthGuardProps {
 export const AuthGuard = ({ children, requireAuth = true }: AuthGuardProps) => {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     if (!loading) {
       if (requireAuth && !user) {
-        navigate('/auth');
+        // Preserve the original URL including query parameters
+        const redirectTo = encodeURIComponent(location.pathname + location.search);
+        navigate(`/auth?redirect=${redirectTo}`);
       } else if (!requireAuth && user) {
         navigate('/dashboard');
       }
     }
-  }, [user, loading, requireAuth, navigate]);
+  }, [user, loading, requireAuth, navigate, location]);
 
   if (loading) {
     return (
