@@ -78,9 +78,9 @@ const Index = () => {
                       Get Started as Provider
                     </Button>
                   </Link>
-                  <Link to="/dashboard?provider=john-doe">
+                  <Link to="/dashboard?demo-client=true">
                     <Button variant="outline" size="lg" className="px-8 py-3">
-                      Onboard as Client (Demo)
+                      Register as Client
                     </Button>
                   </Link>
                   <Link to="/auth">

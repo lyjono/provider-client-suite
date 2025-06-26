@@ -6,6 +6,7 @@ import { ClientOnboarding } from '@/components/ClientOnboarding';
 import { ProviderDashboard } from '@/components/ProviderDashboard';
 import { ClientDashboard } from '@/components/ClientDashboard';
 import { ProviderPresentation } from '@/components/ProviderPresentation';
+import { DemoClientOnboarding } from '@/components/DemoClientOnboarding';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useEffect, useState } from 'react';
@@ -16,6 +17,7 @@ const Dashboard = () => {
   const [searchParams] = useSearchParams();
   const [showProviderPresentation, setShowProviderPresentation] = useState(false);
   const providerSlug = searchParams.get('provider');
+  const isDemoClient = searchParams.get('demo-client') === 'true';
 
   // Only check if user is a provider if they didn't come through a provider link
   const { data: provider, isLoading: providerLoading } = useQuery({
@@ -29,10 +31,10 @@ const Dashboard = () => {
         .single();
       return data;
     },
-    enabled: !!user?.id && !providerSlug, // Don't check if user came through provider link
+    enabled: !!user?.id && !providerSlug && !isDemoClient,
   });
 
-  // Check if user is a client (always check this)
+  // Check if user is a client (always check this unless it's demo mode)
   const { data: client, isLoading: clientLoading } = useQuery({
     queryKey: ['client', user?.id],
     queryFn: async () => {
@@ -43,17 +45,17 @@ const Dashboard = () => {
         .eq('user_id', user.id);
       return data || [];
     },
-    enabled: !!user?.id,
+    enabled: !!user?.id && !isDemoClient,
   });
 
   useEffect(() => {
     // If user came via provider link, show provider presentation first
-    if (providerSlug && !client?.length && !providerLoading && !clientLoading) {
+    if (providerSlug && !client?.length && !providerLoading && !clientLoading && !isDemoClient) {
       setShowProviderPresentation(true);
     }
-  }, [providerSlug, client, providerLoading, clientLoading]);
+  }, [providerSlug, client, providerLoading, clientLoading, isDemoClient]);
 
-  if (providerLoading || clientLoading) {
+  if ((providerLoading || clientLoading) && !isDemoClient) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
@@ -64,8 +66,13 @@ const Dashboard = () => {
   return (
     <AuthGuard>
       <div className="min-h-screen bg-gray-50">
+        {/* Demo client onboarding flow - simple registration without provider */}
+        {isDemoClient && (
+          <DemoClientOnboarding />
+        )}
+        
         {/* Show provider presentation to potential clients */}
-        {showProviderPresentation && providerSlug && (
+        {!isDemoClient && showProviderPresentation && providerSlug && (
           <ProviderPresentation 
             providerSlug={providerSlug} 
             onStartOnboarding={() => setShowProviderPresentation(false)}
@@ -73,20 +80,20 @@ const Dashboard = () => {
         )}
         
         {/* Client onboarding flow - for users coming via provider link */}
-        {!showProviderPresentation && providerSlug && (!client || client.length === 0) && (
+        {!isDemoClient && !showProviderPresentation && providerSlug && (!client || client.length === 0) && (
           <ClientOnboarding providerSlug={providerSlug} />
         )}
         
         {/* Provider onboarding flow - for users without provider slug who are not clients */}
-        {!providerSlug && !provider && (!client || client.length === 0) && (
+        {!isDemoClient && !providerSlug && !provider && (!client || client.length === 0) && (
           <ProviderOnboarding />
         )}
         
         {/* Provider dashboard - only for users who are providers and didn't come through provider link */}
-        {!providerSlug && provider && <ProviderDashboard provider={provider} />}
+        {!isDemoClient && !providerSlug && provider && <ProviderDashboard provider={provider} />}
         
         {/* Client dashboard - handles multiple providers */}
-        {client && client.length > 0 && <ClientDashboard clients={client} />}
+        {!isDemoClient && client && client.length > 0 && <ClientDashboard clients={client} />}
       </div>
     </AuthGuard>
   );
