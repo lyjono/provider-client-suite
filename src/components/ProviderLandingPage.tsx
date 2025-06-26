@@ -50,7 +50,7 @@ export const ProviderLandingPage = ({ providerSlug }: ProviderLandingPageProps) 
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  // Fetch provider info with error handling for new columns
+  // Fetch provider info with simplified query to avoid 406 errors
   const { data: provider, isLoading } = useQuery({
     queryKey: ['provider-landing', providerSlug],
     queryFn: async (): Promise<ExtendedProvider | null> => {
@@ -58,40 +58,62 @@ export const ProviderLandingPage = ({ providerSlug }: ProviderLandingPageProps) 
         // Start with basic provider data that we know exists
         const { data: basicProvider, error: basicError } = await supabase
           .from('providers')
-          .select(`
-            id, user_id, email, first_name, last_name, company_name, phone, address,
-            bio, profile_image_url, provider_slug, created_at, updated_at
-          `)
-          .eq('provider_slug', providerSlug)
-          .maybeSingle();
+          .select('*')
+          .eq('provider_slug', providerSlug);
 
         if (basicError) {
           console.error('Basic provider query error:', basicError);
           return null;
         }
 
-        if (!basicProvider) {
+        if (!basicProvider || basicProvider.length === 0) {
           return null;
         }
 
-        // Try to get additional data with relations
-        try {
-          const { data: fullProvider } = await supabase
-            .from('providers')
-            .select(`
-              *,
-              expertise_areas(name),
-              cities(name),
-              countries(name)
-            `)
-            .eq('provider_slug', providerSlug)
-            .maybeSingle();
+        const provider = basicProvider[0];
 
-          return (fullProvider || basicProvider) as ExtendedProvider;
+        // Try to get additional data with relations if available
+        try {
+          // Get expertise area if available
+          if (provider.expertise_area_id) {
+            const { data: expertiseData } = await supabase
+              .from('expertise_areas')
+              .select('name')
+              .eq('id', provider.expertise_area_id)
+              .single();
+            if (expertiseData) {
+              provider.expertise_areas = expertiseData;
+            }
+          }
+
+          // Get city if available
+          if (provider.city_id) {
+            const { data: cityData } = await supabase
+              .from('cities')
+              .select('name')
+              .eq('id', provider.city_id)
+              .single();
+            if (cityData) {
+              provider.cities = cityData;
+            }
+          }
+
+          // Get country if available
+          if (provider.country_id) {
+            const { data: countryData } = await supabase
+              .from('countries')
+              .select('name')
+              .eq('id', provider.country_id)
+              .single();
+            if (countryData) {
+              provider.countries = countryData;
+            }
+          }
         } catch (relationError) {
           console.warn('Could not fetch provider relations, using basic data:', relationError);
-          return basicProvider as ExtendedProvider;
         }
+
+        return provider as ExtendedProvider;
       } catch (error) {
         console.error('Provider query failed:', error);
         return null;
@@ -162,14 +184,13 @@ export const ProviderLandingPage = ({ providerSlug }: ProviderLandingPageProps) 
           .from('clients')
           .select('*')
           .eq('user_id', user.id)
-          .eq('provider_id', provider.id)
-          .maybeSingle();
+          .eq('provider_id', provider.id);
         
         if (error) {
           console.warn('Client connection check error:', error);
           return null;
         }
-        return data;
+        return data && data.length > 0 ? data[0] : null;
       } catch (error) {
         console.warn('Client connection check failed:', error);
         return null;
@@ -362,7 +383,7 @@ export const ProviderLandingPage = ({ providerSlug }: ProviderLandingPageProps) 
 
             {/* Sidebar */}
             <div className="space-y-6">
-              {/* Contact & Connect */}
+              {/* Connect & Contact */}
               <Card>
                 <CardHeader>
                   <CardTitle>Connect with {provider.first_name}</CardTitle>

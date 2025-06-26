@@ -48,12 +48,17 @@ const Dashboard = () => {
         const clientsWithProviders = await Promise.all(
           clientData.map(async (client) => {
             if (client.provider_id) {
-              const { data: providerData } = await supabase
-                .from('providers')
-                .select('*')
-                .eq('id', client.provider_id)
-                .single();
-              return { ...client, providers: providerData };
+              try {
+                const { data: providerData } = await supabase
+                  .from('providers')
+                  .select('*')
+                  .eq('id', client.provider_id)
+                  .single();
+                return { ...client, providers: providerData };
+              } catch (error) {
+                console.warn('Provider lookup for client failed:', error);
+                return { ...client, providers: null };
+              }
             }
             return { ...client, providers: null };
           })
@@ -77,15 +82,15 @@ const Dashboard = () => {
         const { data, error } = await supabase
           .from('providers')
           .select('*')
-          .eq('user_id', user.id)
-          .single();
+          .eq('user_id', user.id);
         
-        if (error && error.code !== 'PGRST116') {
+        if (error) {
           console.error('Provider query error:', error);
+          return null;
         }
         
         console.log('Provider query result:', data);
-        return data;
+        return data && data.length > 0 ? data[0] : null;
       } catch (error) {
         console.error('Provider query failed:', error);
         return null;
@@ -101,12 +106,11 @@ const Dashboard = () => {
       if (!user?.id || !providerSlug) return null;
       
       try {
-        // Get provider by slug
+        // Get provider by slug - simplified query
         const { data: providerData, error: providerError } = await supabase
           .from('providers')
           .select('id, provider_slug')
-          .eq('provider_slug', providerSlug)
-          .maybeSingle();
+          .eq('provider_slug', providerSlug);
         
         if (providerError) {
           console.error('Provider lookup error:', providerError);
@@ -115,15 +119,16 @@ const Dashboard = () => {
         
         console.log('Provider data for slug:', providerData);
         
-        if (!providerData) return null;
+        if (!providerData || providerData.length === 0) return null;
+        
+        const provider = providerData[0];
         
         // Check if user is already connected to this provider
         const { data: clientData, error: clientError } = await supabase
           .from('clients')
           .select('*')
           .eq('user_id', user.id)
-          .eq('provider_id', providerData.id)
-          .maybeSingle();
+          .eq('provider_id', provider.id);
         
         if (clientError) {
           console.error('Existing connection error:', clientError);
@@ -131,7 +136,7 @@ const Dashboard = () => {
         }
         
         console.log('Existing connection check:', clientData);
-        return clientData;
+        return clientData && clientData.length > 0 ? clientData[0] : null;
       } catch (error) {
         console.error('Connection check failed:', error);
         return null;
