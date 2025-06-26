@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -16,10 +15,12 @@ interface ClientsManagementProps {
   providerId: string;
 }
 
+type LeadStatus = 'contacted' | 'qualified' | 'converted' | 'archived';
+
 export const ClientsManagement = ({ providerId }: ClientsManagementProps) => {
   const [selectedClient, setSelectedClient] = useState<any>(null);
   const [notes, setNotes] = useState('');
-  const [leadStatus, setLeadStatus] = useState('');
+  const [leadStatus, setLeadStatus] = useState<LeadStatus>('contacted');
   const queryClient = useQueryClient();
 
   // Fetch clients
@@ -73,7 +74,7 @@ export const ClientsManagement = ({ providerId }: ClientsManagementProps) => {
   const openClientDialog = (client: any) => {
     setSelectedClient(client);
     setNotes(client.notes || '');
-    setLeadStatus(client.lead_status || 'contacted');
+    setLeadStatus((client.lead_status as LeadStatus) || 'contacted');
   };
 
   const getStatusColor = (status: string) => {
