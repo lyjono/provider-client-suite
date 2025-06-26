@@ -3,15 +3,15 @@ import { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { Users, Calendar, MessageCircle, FileText, Settings, LogOut, Link } from 'lucide-react';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Users, Settings, LogOut, Link, User, MessageCircle, Calendar, FileText } from 'lucide-react';
 import { ClientsManagement } from '@/components/ClientsManagement';
-import { AppointmentsManagement } from '@/components/AppointmentsManagement';
-import { ChatInterface } from '@/components/ChatInterface';
-import { DocumentsManagement } from '@/components/DocumentsManagement';
 import { ProviderSettings } from '@/components/ProviderSettings';
+import { ProviderClientDetails } from '@/components/ProviderClientDetails';
 import { toast } from '@/hooks/use-toast';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 
 interface ProviderDashboardProps {
   provider: any;
@@ -19,10 +19,27 @@ interface ProviderDashboardProps {
 
 export const ProviderDashboard = ({ provider }: ProviderDashboardProps) => {
   const { signOut } = useAuth();
-  const [activeTab, setActiveTab] = useState('clients');
+  const [currentView, setCurrentView] = useState<'clients' | 'settings'>('clients');
+  const [selectedClient, setSelectedClient] = useState<any>(null);
+
+  // Fetch clients
+  const { data: clients } = useQuery({
+    queryKey: ['clients', provider.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('clients')
+        .select(`
+          *,
+          cities(name),
+          countries(name)
+        `)
+        .eq('provider_id', provider.id)
+        .order('created_at', { ascending: false });
+      return data || [];
+    },
+  });
 
   const copyProviderLink = () => {
-    // Use the provider_slug to create the link
     const link = `${window.location.origin}/dashboard?provider=${provider.provider_slug}`;
     navigator.clipboard.writeText(link);
     toast({
@@ -39,6 +56,26 @@ export const ProviderDashboard = ({ provider }: ProviderDashboardProps) => {
       default: return 'bg-gray-500';
     }
   };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'contacted': return 'bg-blue-500';
+      case 'qualified': return 'bg-yellow-500';
+      case 'converted': return 'bg-green-500';
+      case 'archived': return 'bg-gray-500';
+      default: return 'bg-blue-500';
+    }
+  };
+
+  if (selectedClient) {
+    return (
+      <ProviderClientDetails 
+        client={selectedClient} 
+        provider={provider}
+        onBack={() => setSelectedClient(null)}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -66,7 +103,17 @@ export const ProviderDashboard = ({ provider }: ProviderDashboardProps) => {
               </div>
             </div>
             <div className="flex items-center space-x-4">
-              <Button variant="outline" onClick={() => setActiveTab('settings')}>
+              <Button 
+                variant={currentView === 'clients' ? 'default' : 'outline'} 
+                onClick={() => setCurrentView('clients')}
+              >
+                <Users className="h-4 w-4 mr-2" />
+                Clients
+              </Button>
+              <Button 
+                variant={currentView === 'settings' ? 'default' : 'outline'} 
+                onClick={() => setCurrentView('settings')}
+              >
                 <Settings className="h-4 w-4 mr-2" />
                 Settings
               </Button>
@@ -81,50 +128,92 @@ export const ProviderDashboard = ({ provider }: ProviderDashboardProps) => {
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="mb-8">
-            <TabsTrigger value="clients" className="flex items-center space-x-2">
-              <Users className="h-4 w-4" />
-              <span>Clients</span>
-            </TabsTrigger>
-            <TabsTrigger value="appointments" className="flex items-center space-x-2">
-              <Calendar className="h-4 w-4" />
-              <span>Appointments</span>
-            </TabsTrigger>
-            <TabsTrigger value="chat" className="flex items-center space-x-2">
-              <MessageCircle className="h-4 w-4" />
-              <span>Messages</span>
-            </TabsTrigger>
-            <TabsTrigger value="documents" className="flex items-center space-x-2">
-              <FileText className="h-4 w-4" />
-              <span>Documents</span>
-            </TabsTrigger>
-            <TabsTrigger value="settings" className="flex items-center space-x-2">
-              <Settings className="h-4 w-4" />
-              <span>Settings</span>
-            </TabsTrigger>
-          </TabsList>
+        {currentView === 'settings' ? (
+          <ProviderSettings provider={provider} />
+        ) : (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h2 className="text-2xl font-bold">Your Clients</h2>
+              <div className="text-sm text-gray-600">
+                {clients?.length || 0} total clients
+              </div>
+            </div>
 
-          <TabsContent value="clients">
-            <ClientsManagement providerId={provider.id} />
-          </TabsContent>
-
-          <TabsContent value="appointments">
-            <AppointmentsManagement providerId={provider.id} />
-          </TabsContent>
-
-          <TabsContent value="chat">
-            <ChatInterface userType="provider" userId={provider.id} />
-          </TabsContent>
-
-          <TabsContent value="documents">
-            <DocumentsManagement userType="provider" userId={provider.id} />
-          </TabsContent>
-
-          <TabsContent value="settings">
-            <ProviderSettings provider={provider} />
-          </TabsContent>
-        </Tabs>
+            {!clients || clients.length === 0 ? (
+              <Card>
+                <CardContent className="text-center py-12">
+                  <User className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">No clients yet</h3>
+                  <p className="text-gray-600 mb-4">
+                    Share your client registration link to start getting clients
+                  </p>
+                  <Button onClick={copyProviderLink}>
+                    <Link className="h-4 w-4 mr-2" />
+                    Copy Client Link
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {clients.map((client) => {
+                  const initials = `${client.first_name[0]}${client.last_name[0]}`.toUpperCase();
+                  
+                  return (
+                    <Card key={client.id} className="hover:shadow-md transition-shadow cursor-pointer">
+                      <CardHeader className="pb-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <Avatar className="h-10 w-10">
+                              <AvatarImage src={client.profile_image_url} />
+                              <AvatarFallback className="bg-blue-600 text-white text-sm">
+                                {initials}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <CardTitle className="text-lg">
+                                {client.first_name} {client.last_name}
+                              </CardTitle>
+                              <p className="text-sm text-gray-600">{client.email}</p>
+                            </div>
+                          </div>
+                          <Badge className={getStatusColor(client.lead_status)}>
+                            {client.lead_status}
+                          </Badge>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        {client.phone && (
+                          <p className="text-sm text-gray-600">{client.phone}</p>
+                        )}
+                        {client.cities?.name && (
+                          <p className="text-sm text-gray-600">
+                            {client.cities.name}, {client.countries?.name}
+                          </p>
+                        )}
+                        {client.notes && (
+                          <p className="text-sm text-gray-700 bg-gray-50 p-2 rounded">
+                            {client.notes.substring(0, 80)}
+                            {client.notes.length > 80 && '...'}
+                          </p>
+                        )}
+                        <div className="flex space-x-2 pt-2">
+                          <Button 
+                            size="sm" 
+                            onClick={() => setSelectedClient(client)}
+                            className="flex-1"
+                          >
+                            <MessageCircle className="h-4 w-4 mr-1" />
+                            View Details
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
