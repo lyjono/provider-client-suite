@@ -14,7 +14,6 @@ import { useSearchParams } from 'react-router-dom';
 const Dashboard = () => {
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
-  const [userType, setUserType] = useState<'provider' | 'client' | null>(null);
   const [showProviderPresentation, setShowProviderPresentation] = useState(false);
   const providerSlug = searchParams.get('provider');
 
@@ -48,24 +47,11 @@ const Dashboard = () => {
   });
 
   useEffect(() => {
-    if (provider) {
-      // User is a provider
-      setUserType('provider');
-    } else if (client && client.length > 0) {
-      // User is a client
-      setUserType('client');
-    } else if (!providerLoading && !clientLoading && !provider && (!client || client.length === 0)) {
-      // User needs onboarding
-      if (providerSlug) {
-        // User came via provider link - show provider presentation first, then client onboarding
-        setShowProviderPresentation(true);
-        setUserType('client');
-      } else {
-        // No provider slug - user wants to register as provider
-        setUserType(null); // Will show provider onboarding
-      }
+    // If user came via provider link, show provider presentation first
+    if (providerSlug && !provider && (!client || client.length === 0) && !providerLoading && !clientLoading) {
+      setShowProviderPresentation(true);
     }
-  }, [provider, client, providerLoading, clientLoading, providerSlug]);
+  }, [providerSlug, provider, client, providerLoading, clientLoading]);
 
   if (providerLoading || clientLoading) {
     return (
@@ -79,20 +65,20 @@ const Dashboard = () => {
     <AuthGuard>
       <div className="min-h-screen bg-gray-50">
         {/* Show provider presentation to potential clients */}
-        {showProviderPresentation && providerSlug && userType === 'client' && (
+        {showProviderPresentation && providerSlug && (
           <ProviderPresentation 
             providerSlug={providerSlug} 
             onStartOnboarding={() => setShowProviderPresentation(false)}
           />
         )}
         
-        {/* Client onboarding flow - only when not showing presentation */}
-        {!showProviderPresentation && userType === 'client' && !provider && (!client || client.length === 0) && providerSlug && (
+        {/* Client onboarding flow - for users coming via provider link */}
+        {!showProviderPresentation && providerSlug && !provider && (!client || client.length === 0) && (
           <ClientOnboarding providerSlug={providerSlug} />
         )}
         
-        {/* Provider onboarding flow - only when no provider slug */}
-        {userType === null && !provider && (!client || client.length === 0) && !providerSlug && (
+        {/* Provider onboarding flow - for users without provider slug */}
+        {!providerSlug && !provider && (!client || client.length === 0) && (
           <ProviderOnboarding />
         )}
         
