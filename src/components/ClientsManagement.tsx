@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -152,7 +153,7 @@ export const ClientsManagement = ({ providerId }: ClientsManagementProps) => {
                     <div className="space-y-4">
                       <div>
                         <label className="text-sm font-medium">Lead Status</label>
-                        <Select value={leadStatus} onValueChange={setLeadStatus}>
+                        <Select value={leadStatus} onValueChange={(value: string) => setLeadStatus(value as LeadStatus)}>
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
