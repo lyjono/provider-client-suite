@@ -80,7 +80,7 @@ const Index = () => {
                   </Link>
                   <Link to="/dashboard?demo-client=true">
                     <Button variant="outline" size="lg" className="px-8 py-3">
-                      Register as Client
+                      Onboard as Client
                     </Button>
                   </Link>
                   <Link to="/auth">
