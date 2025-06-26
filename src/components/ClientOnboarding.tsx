@@ -70,6 +70,7 @@ export const ClientOnboarding = ({ providerSlug }: ClientOnboardingProps) => {
     try {
       if (!provider) throw new Error('Provider not found');
 
+      // Insert into clients table, not providers table
       const { error } = await supabase.from('clients').insert({
         user_id: user?.id,
         provider_id: provider.id,
