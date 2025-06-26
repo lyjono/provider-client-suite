@@ -355,73 +355,109 @@ export type Database = {
       providers: {
         Row: {
           address: string
+          availability_note: string | null
           bio: string | null
+          certifications: string[] | null
           city_id: string | null
           company_name: string | null
+          consultation_fee: number | null
           country_id: string | null
           created_at: string | null
+          education: string | null
           email: string
           expertise_area_id: string | null
           first_name: string
+          hourly_rate: number | null
           id: string
           is_active: boolean | null
+          languages: string[] | null
           last_name: string
+          linkedin_url: string | null
           phone: string | null
           profile_image_url: string | null
           provider_slug: string | null
+          services: string[] | null
           stripe_customer_id: string | null
           subscription_end_date: string | null
           subscription_tier: Database["public"]["Enums"]["provider_tier"] | null
+          tagline: string | null
+          twitter_url: string | null
           updated_at: string | null
           user_id: string | null
+          website_url: string | null
+          years_experience: number | null
         }
         Insert: {
           address: string
+          availability_note?: string | null
           bio?: string | null
+          certifications?: string[] | null
           city_id?: string | null
           company_name?: string | null
+          consultation_fee?: number | null
           country_id?: string | null
           created_at?: string | null
+          education?: string | null
           email: string
           expertise_area_id?: string | null
           first_name: string
+          hourly_rate?: number | null
           id?: string
           is_active?: boolean | null
+          languages?: string[] | null
           last_name: string
+          linkedin_url?: string | null
           phone?: string | null
           profile_image_url?: string | null
           provider_slug?: string | null
+          services?: string[] | null
           stripe_customer_id?: string | null
           subscription_end_date?: string | null
           subscription_tier?:
             | Database["public"]["Enums"]["provider_tier"]
             | null
+          tagline?: string | null
+          twitter_url?: string | null
           updated_at?: string | null
           user_id?: string | null
+          website_url?: string | null
+          years_experience?: number | null
         }
         Update: {
           address?: string
+          availability_note?: string | null
           bio?: string | null
+          certifications?: string[] | null
           city_id?: string | null
           company_name?: string | null
+          consultation_fee?: number | null
           country_id?: string | null
           created_at?: string | null
+          education?: string | null
           email?: string
           expertise_area_id?: string | null
           first_name?: string
+          hourly_rate?: number | null
           id?: string
           is_active?: boolean | null
+          languages?: string[] | null
           last_name?: string
+          linkedin_url?: string | null
           phone?: string | null
           profile_image_url?: string | null
           provider_slug?: string | null
+          services?: string[] | null
           stripe_customer_id?: string | null
           subscription_end_date?: string | null
           subscription_tier?:
             | Database["public"]["Enums"]["provider_tier"]
             | null
+          tagline?: string | null
+          twitter_url?: string | null
           updated_at?: string | null
           user_id?: string | null
+          website_url?: string | null
+          years_experience?: number | null
         }
         Relationships: [
           {
@@ -443,6 +479,50 @@ export type Database = {
             columns: ["expertise_area_id"]
             isOneToOne: false
             referencedRelation: "expertise_areas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      service_packages: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          duration_minutes: number | null
+          id: string
+          is_active: boolean | null
+          is_featured: boolean | null
+          name: string
+          price: number | null
+          provider_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          duration_minutes?: number | null
+          id?: string
+          is_active?: boolean | null
+          is_featured?: boolean | null
+          name: string
+          price?: number | null
+          provider_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          duration_minutes?: number | null
+          id?: string
+          is_active?: boolean | null
+          is_featured?: boolean | null
+          name?: string
+          price?: number | null
+          provider_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "service_packages_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "providers"
             referencedColumns: ["id"]
           },
         ]
@@ -494,6 +574,47 @@ export type Database = {
           },
           {
             foreignKeyName: "shared_documents_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "providers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      testimonials: {
+        Row: {
+          client_name: string
+          client_title: string | null
+          content: string
+          created_at: string | null
+          id: string
+          is_featured: boolean | null
+          provider_id: string | null
+          rating: number | null
+        }
+        Insert: {
+          client_name: string
+          client_title?: string | null
+          content: string
+          created_at?: string | null
+          id?: string
+          is_featured?: boolean | null
+          provider_id?: string | null
+          rating?: number | null
+        }
+        Update: {
+          client_name?: string
+          client_title?: string | null
+          content?: string
+          created_at?: string | null
+          id?: string
+          is_featured?: boolean | null
+          provider_id?: string | null
+          rating?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "testimonials_provider_id_fkey"
             columns: ["provider_id"]
             isOneToOne: false
             referencedRelation: "providers"

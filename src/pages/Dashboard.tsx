@@ -5,7 +5,7 @@ import { ProviderOnboarding } from '@/components/ProviderOnboarding';
 import { ClientOnboarding } from '@/components/ClientOnboarding';
 import { ProviderDashboard } from '@/components/ProviderDashboard';
 import { ClientDashboard } from '@/components/ClientDashboard';
-import { ProviderPresentation } from '@/components/ProviderPresentation';
+import { ProviderLandingPage } from '@/components/ProviderLandingPage';
 import { DemoClientOnboarding } from '@/components/DemoClientOnboarding';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -15,7 +15,7 @@ import { useSearchParams } from 'react-router-dom';
 const Dashboard = () => {
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
-  const [showProviderPresentation, setShowProviderPresentation] = useState(false);
+  const [showLandingPage, setShowLandingPage] = useState(false);
   const providerSlug = searchParams.get('provider');
   const isDemoClient = searchParams.get('demo-client') === 'true';
 
@@ -28,7 +28,6 @@ const Dashboard = () => {
     queryKey: ['client', user?.id],
     queryFn: async () => {
       if (!user?.id) return null;
-      // First get client records without requiring provider relationship
       const { data: clientData } = await supabase
         .from('clients')
         .select('*')
@@ -40,7 +39,6 @@ const Dashboard = () => {
         return [];
       }
       
-      // Then get provider data for each client separately
       const clientsWithProviders = await Promise.all(
         clientData.map(async (client) => {
           if (client.provider_id) {
@@ -76,13 +74,46 @@ const Dashboard = () => {
     enabled: !!user?.id && (!client || client.length === 0),
   });
 
+  // Check if current user is already connected to the provider from the slug
+  const { data: existingConnection } = useQuery({
+    queryKey: ['existing-provider-connection', user?.id, providerSlug],
+    queryFn: async () => {
+      if (!user?.id || !providerSlug) return null;
+      
+      // Get provider by slug
+      const { data: providerData } = await supabase
+        .from('providers')
+        .select('id')
+        .eq('provider_slug', providerSlug)
+        .single();
+      
+      if (!providerData) return null;
+      
+      // Check if user is already connected to this provider
+      const { data: clientData } = await supabase
+        .from('clients')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('provider_id', providerData.id)
+        .single();
+      
+      return clientData;
+    },
+    enabled: !!user?.id && !!providerSlug,
+  });
+
   useEffect(() => {
-    // If user came via provider link, always show provider presentation first
-    // This applies even if they are already a client or provider
+    // Show landing page for provider links, but handle different scenarios
     if (providerSlug && !isDemoClient) {
-      setShowProviderPresentation(true);
+      // If user is authenticated and already connected, don't show landing page
+      if (user && existingConnection) {
+        setShowLandingPage(false);
+      } else {
+        // Show landing page for new visitors or unconnected users
+        setShowLandingPage(true);
+      }
     }
-  }, [providerSlug, isDemoClient]);
+  }, [providerSlug, isDemoClient, user, existingConnection]);
 
   if (clientLoading || ((!client || client.length === 0) && providerLoading)) {
     return (
@@ -96,32 +127,37 @@ const Dashboard = () => {
   console.log('  client:', client);
   console.log('  client.length:', client?.length);
   console.log('  provider:', provider);
-  console.log('  showProviderPresentation:', showProviderPresentation);
+  console.log('  showLandingPage:', showLandingPage);
+  console.log('  existingConnection:', existingConnection);
 
   return (
     <AuthGuard>
       <div className="min-h-screen bg-gray-50">
-        {/* Demo client onboarding flow - simple registration without provider */}
+        {/* Demo client onboarding flow */}
         {isDemoClient && (
           <DemoClientOnboarding />
         )}
         
-        {/* Show provider presentation to anyone visiting a provider link */}
-        {!isDemoClient && showProviderPresentation && providerSlug && (
-          <ProviderPresentation 
-            providerSlug={providerSlug} 
-            onStartOnboarding={() => setShowProviderPresentation(false)}
+        {/* Show landing page for provider links (unless user is already connected) */}
+        {!isDemoClient && showLandingPage && providerSlug && (
+          <ProviderLandingPage 
+            providerSlug={providerSlug}
           />
         )}
         
-        {/* Client onboarding flow - for users coming via provider link who want to register */}
-        {!isDemoClient && !showProviderPresentation && providerSlug && (
+        {/* Client onboarding flow - for authenticated users who want to connect to a provider */}
+        {!isDemoClient && !showLandingPage && providerSlug && user && !existingConnection && (
           <ClientOnboarding providerSlug={providerSlug} />
         )}
         
         {/* If user has client records and no provider link, show client dashboard */}
         {!isDemoClient && !providerSlug && client && client.length > 0 && (
           <ClientDashboard clients={client} />
+        )}
+        
+        {/* If user is connected to the provider, show client dashboard */}
+        {!isDemoClient && providerSlug && user && existingConnection && (
+          <ClientDashboard clients={client || []} />
         )}
         
         {/* Provider onboarding flow - for users without provider slug who are not clients */}
