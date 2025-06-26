@@ -154,14 +154,20 @@ const Dashboard = () => {
       } else if (existingConnection) {
         // User is logged in and already connected - don't show landing page
         setShowLandingPage(false);
+      } else if (client && client.length > 0) {
+        // User has existing client records - check if connected to this specific provider
+        const isConnectedToThisProvider = client.some(c => 
+          c.providers?.provider_slug === providerSlug
+        );
+        setShowLandingPage(!isConnectedToThisProvider);
       } else {
-        // User is logged in but not connected to this provider - show landing page
+        // User is logged in but has no client records - show landing page
         setShowLandingPage(true);
       }
     } else {
       setShowLandingPage(false);
     }
-  }, [providerSlug, isDemoClient, user, existingConnection]);
+  }, [providerSlug, isDemoClient, user, existingConnection, client]);
 
   if (clientLoading || ((!client || client.length === 0) && providerLoading)) {
     return (
@@ -177,6 +183,12 @@ const Dashboard = () => {
   console.log('  provider:', provider);
   console.log('  showLandingPage:', showLandingPage);
   console.log('  existingConnection:', existingConnection);
+
+  // Helper function to check if user is connected to the current provider
+  const isConnectedToCurrentProvider = () => {
+    if (!providerSlug || !client || client.length === 0) return false;
+    return client.some(c => c.providers?.provider_slug === providerSlug);
+  };
 
   return (
     <AuthGuard>
@@ -194,7 +206,7 @@ const Dashboard = () => {
         )}
         
         {/* Client onboarding flow - for authenticated users who want to connect to a provider but aren't connected yet */}
-        {!isDemoClient && !showLandingPage && providerSlug && user && !existingConnection && (
+        {!isDemoClient && !showLandingPage && providerSlug && user && !existingConnection && !isConnectedToCurrentProvider() && (
           <ClientOnboarding providerSlug={providerSlug} />
         )}
         
@@ -204,7 +216,7 @@ const Dashboard = () => {
         )}
         
         {/* If user is connected to the provider, show client dashboard */}
-        {!isDemoClient && !showLandingPage && providerSlug && user && existingConnection && (
+        {!isDemoClient && !showLandingPage && providerSlug && user && (existingConnection || isConnectedToCurrentProvider()) && (
           <ClientDashboard clients={client || []} />
         )}
         
