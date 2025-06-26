@@ -8,12 +8,19 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { FileText, Upload, Download, Trash2, Eye } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { FileText, Upload, Download, Trash2, Eye, Users } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 interface DocumentsManagementProps {
   userType: 'provider' | 'client';
   userId: string;
+}
+
+interface RelationshipOption {
+  id: string;
+  label: string;
+  conversationId: string;
 }
 
 export const DocumentsManagement = ({ userType, userId }: DocumentsManagementProps) => {
@@ -22,57 +29,130 @@ export const DocumentsManagement = ({ userType, userId }: DocumentsManagementPro
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [description, setDescription] = useState('');
+  const [selectedRelationship, setSelectedRelationship] = useState<string>('all');
 
-  // Get conversation ID for file organization
-  const { data: conversation } = useQuery({
-    queryKey: ['conversation-for-documents', userId, userType],
+  // Get all relationships for this user
+  const { data: relationships } = useQuery({
+    queryKey: ['relationships', userId, userType],
     queryFn: async () => {
       if (userType === 'provider') {
-        // For providers, get any conversation they're part of (we'll use the first one for demo)
+        // For providers, get all conversations with client info
         const { data } = await supabase
           .from('conversations')
-          .select('*')
-          .eq('provider_id', userId)
-          .limit(1);
-        return data?.[0] || null;
+          .select(`
+            id,
+            client_id,
+            clients(first_name, last_name)
+          `)
+          .eq('provider_id', userId);
+        
+        return data?.map(conv => ({
+          id: conv.id,
+          label: `${conv.clients?.first_name} ${conv.clients?.last_name}`,
+          conversationId: conv.id
+        })) || [];
       } else {
-        // For clients, get their conversation
+        // For clients, get the client record first, then find conversations
+        const { data: clientRecord } = await supabase
+          .from('clients')
+          .select('*')
+          .eq('id', userId)
+          .single();
+
+        if (!clientRecord || !clientRecord.provider_id) {
+          return [];
+        }
+
+        // Get conversation with provider info
         const { data } = await supabase
           .from('conversations')
-          .select('*')
+          .select(`
+            id,
+            provider_id,
+            providers(first_name, last_name, company_name)
+          `)
           .eq('client_id', userId)
-          .limit(1);
-        return data?.[0] || null;
+          .eq('provider_id', clientRecord.provider_id);
+        
+        return data?.map(conv => ({
+          id: conv.id,
+          label: conv.providers?.company_name || 
+                 `${conv.providers?.first_name} ${conv.providers?.last_name}`,
+          conversationId: conv.id
+        })) || [];
       }
     },
   });
 
-  // Fetch shared documents
-  const { data: documents, isLoading } = useQuery({
-    queryKey: ['documents', userId, userType],
+  // Get conversation for upload (based on selected relationship)
+  const { data: selectedConversation } = useQuery({
+    queryKey: ['selected-conversation', selectedRelationship],
     queryFn: async () => {
-      const column = userType === 'provider' ? 'provider_id' : 'client_id';
-      const { data } = await supabase
+      if (selectedRelationship === 'all' || !selectedRelationship) {
+        return relationships?.[0] || null;
+      }
+      return relationships?.find(r => r.id === selectedRelationship) || null;
+    },
+    enabled: !!relationships && relationships.length > 0,
+  });
+
+  // Fetch shared documents with relationship filtering
+  const { data: documents, isLoading } = useQuery({
+    queryKey: ['documents', userId, userType, selectedRelationship],
+    queryFn: async () => {
+      let query = supabase
         .from('shared_documents')
         .select(`
           *,
           providers(first_name, last_name, company_name),
           clients(first_name, last_name)
-        `)
-        .eq(column, userId)
-        .order('created_at', { ascending: false });
+        `);
+
+      // Apply filters based on user type and selected relationship
+      if (userType === 'provider') {
+        query = query.eq('provider_id', userId);
+        if (selectedRelationship !== 'all') {
+          // Filter by specific conversation (need to join with conversations)
+          const { data: conversationData } = await supabase
+            .from('conversations')
+            .select('client_id')
+            .eq('id', selectedRelationship)
+            .single();
+          
+          if (conversationData) {
+            query = query.eq('client_id', conversationData.client_id);
+          }
+        }
+      } else {
+        query = query.eq('client_id', userId);
+        if (selectedRelationship !== 'all') {
+          // Filter by specific conversation
+          const { data: conversationData } = await supabase
+            .from('conversations')
+            .select('provider_id')
+            .eq('id', selectedRelationship)
+            .single();
+          
+          if (conversationData) {
+            query = query.eq('provider_id', conversationData.provider_id);
+          }
+        }
+      }
+
+      const { data } = await query.order('created_at', { ascending: false });
       return data || [];
     },
+    enabled: !!relationships,
   });
 
   // Upload mutation
   const uploadMutation = useMutation({
     mutationFn: async ({ file, description }: { file: File; description: string }) => {
-      if (!conversation || !user) throw new Error('No conversation or user found');
+      if (!selectedConversation || !user) throw new Error('No conversation or user found');
 
       // Create file path: conversation_id/timestamp_filename
       const timestamp = Date.now();
-      const filePath = `${conversation.id}/${timestamp}_${file.name}`;
+      const filePath = `${selectedConversation.conversationId}/${timestamp}_${file.name}`;
 
       // Upload file to storage
       const { data: uploadData, error: uploadError } = await supabase.storage
@@ -86,6 +166,15 @@ export const DocumentsManagement = ({ userType, userId }: DocumentsManagementPro
         .from('shared-documents')
         .getPublicUrl(filePath);
 
+      // Get conversation details to determine client and provider IDs
+      const { data: conversation } = await supabase
+        .from('conversations')
+        .select('client_id, provider_id')
+        .eq('id', selectedConversation.conversationId)
+        .single();
+
+      if (!conversation) throw new Error('Conversation not found');
+
       // Create database record
       const documentData = {
         file_name: file.name,
@@ -94,10 +183,8 @@ export const DocumentsManagement = ({ userType, userId }: DocumentsManagementPro
         file_size: file.size,
         description,
         uploaded_by: user.id,
-        ...(userType === 'provider' 
-          ? { provider_id: userId, client_id: conversation.client_id }
-          : { client_id: userId, provider_id: conversation.provider_id }
-        )
+        provider_id: conversation.provider_id,
+        client_id: conversation.client_id
       };
 
       const { data, error } = await supabase
@@ -195,6 +282,15 @@ export const DocumentsManagement = ({ userType, userId }: DocumentsManagementPro
     return document.uploaded_by === user?.id;
   };
 
+  const getRelationshipContext = (document: any) => {
+    if (userType === 'provider') {
+      return `Shared with ${document.clients?.first_name} ${document.clients?.last_name}`;
+    } else {
+      return `Shared by ${document.providers?.company_name || 
+        `${document.providers?.first_name} ${document.providers?.last_name}`}`;
+    }
+  };
+
   if (isLoading) {
     return <div className="text-center py-8">Loading documents...</div>;
   }
@@ -203,53 +299,88 @@ export const DocumentsManagement = ({ userType, userId }: DocumentsManagementPro
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">Document Management</h2>
-        <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Upload className="h-4 w-4 mr-2" />
-              Upload Document
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Upload Document</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">Select File</label>
-                <Input
-                  type="file"
-                  onChange={(e) => setFile(e.target.files?.[0] || null)}
-                  accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.gif"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">Description (optional)</label>
-                <Textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Add a description for this document..."
-                  rows={3}
-                />
-              </div>
-              <div className="flex justify-end space-x-2">
-                <Button variant="outline" onClick={() => setIsUploadDialogOpen(false)}>
-                  Cancel
-                </Button>
-                <Button 
-                  onClick={handleUpload} 
-                  disabled={!file || uploadMutation.isPending}
-                >
-                  {uploadMutation.isPending ? 'Uploading...' : 'Upload'}
-                </Button>
-              </div>
+        <div className="flex items-center space-x-4">
+          {relationships && relationships.length > 1 && (
+            <div className="flex items-center space-x-2">
+              <Users className="h-4 w-4 text-gray-600" />
+              <Select value={selectedRelationship} onValueChange={setSelectedRelationship}>
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="Select relationship" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Relationships</SelectItem>
+                  {relationships.map((rel) => (
+                    <SelectItem key={rel.id} value={rel.id}>
+                      {rel.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          </DialogContent>
-        </Dialog>
+          )}
+          <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
+            <DialogTrigger asChild>
+              <Button disabled={!selectedConversation}>
+                <Upload className="h-4 w-4 mr-2" />
+                Upload Document
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Upload Document</DialogTitle>
+                {selectedConversation && (
+                  <p className="text-sm text-gray-600">
+                    Uploading to: {selectedConversation.label}
+                  </p>
+                )}
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-2">Select File</label>
+                  <Input
+                    type="file"
+                    onChange={(e) => setFile(e.target.files?.[0] || null)}
+                    accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.gif"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2">Description (optional)</label>
+                  <Textarea
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="Add a description for this document..."
+                    rows={3}
+                  />
+                </div>
+                <div className="flex justify-end space-x-2">
+                  <Button variant="outline" onClick={() => setIsUploadDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button 
+                    onClick={handleUpload} 
+                    disabled={!file || uploadMutation.isPending}
+                  >
+                    {uploadMutation.isPending ? 'Uploading...' : 'Upload'}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
+      {selectedRelationship !== 'all' && relationships && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <p className="text-sm text-blue-800">
+            Showing documents for: <strong>
+              {relationships.find(r => r.id === selectedRelationship)?.label}
+            </strong>
+          </p>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {documents.length === 0 ? (
+        {documents?.length === 0 ? (
           <Card className="col-span-full">
             <CardContent className="text-center py-12">
               <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
@@ -257,14 +388,17 @@ export const DocumentsManagement = ({ userType, userId }: DocumentsManagementPro
               <p className="text-gray-600 mb-4">
                 Upload and share documents securely with your {userType === 'provider' ? 'clients' : 'provider'}
               </p>
-              <Button onClick={() => setIsUploadDialogOpen(true)}>
+              <Button 
+                onClick={() => setIsUploadDialogOpen(true)}
+                disabled={!selectedConversation}
+              >
                 <Upload className="h-4 w-4 mr-2" />
                 Upload First Document
               </Button>
             </CardContent>
           </Card>
         ) : (
-          documents.map((document) => (
+          documents?.map((document) => (
             <Card key={document.id} className="hover:shadow-md transition-shadow">
               <CardHeader className="pb-3">
                 <div className="flex items-center space-x-2">
@@ -285,6 +419,11 @@ export const DocumentsManagement = ({ userType, userId }: DocumentsManagementPro
                     By: {document.uploaded_by === user?.id ? 'You' : 
                          (userType === 'provider' ? 'Client' : 'Provider')}
                   </p>
+                  {selectedRelationship === 'all' && relationships && relationships.length > 1 && (
+                    <p className="text-blue-600 font-medium">
+                      {getRelationshipContext(document)}
+                    </p>
+                  )}
                 </div>
                 <div className="flex space-x-2 pt-2">
                   <Button 
