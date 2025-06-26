@@ -17,7 +17,7 @@ const Dashboard = () => {
   const [showProviderPresentation, setShowProviderPresentation] = useState(false);
   const providerSlug = searchParams.get('provider');
 
-  // Check if user is a provider
+  // Only check if user is a provider if they didn't come through a provider link
   const { data: provider, isLoading: providerLoading } = useQuery({
     queryKey: ['provider', user?.id],
     queryFn: async () => {
@@ -29,10 +29,10 @@ const Dashboard = () => {
         .single();
       return data;
     },
-    enabled: !!user?.id,
+    enabled: !!user?.id && !providerSlug, // Don't check if user came through provider link
   });
 
-  // Check if user is a client
+  // Check if user is a client (always check this)
   const { data: client, isLoading: clientLoading } = useQuery({
     queryKey: ['client', user?.id],
     queryFn: async () => {
@@ -48,10 +48,10 @@ const Dashboard = () => {
 
   useEffect(() => {
     // If user came via provider link, show provider presentation first
-    if (providerSlug && !provider && (!client || client.length === 0) && !providerLoading && !clientLoading) {
+    if (providerSlug && !client?.length && !providerLoading && !clientLoading) {
       setShowProviderPresentation(true);
     }
-  }, [providerSlug, provider, client, providerLoading, clientLoading]);
+  }, [providerSlug, client, providerLoading, clientLoading]);
 
   if (providerLoading || clientLoading) {
     return (
@@ -73,17 +73,17 @@ const Dashboard = () => {
         )}
         
         {/* Client onboarding flow - for users coming via provider link */}
-        {!showProviderPresentation && providerSlug && !provider && (!client || client.length === 0) && (
+        {!showProviderPresentation && providerSlug && (!client || client.length === 0) && (
           <ClientOnboarding providerSlug={providerSlug} />
         )}
         
-        {/* Provider onboarding flow - for users without provider slug */}
+        {/* Provider onboarding flow - for users without provider slug who are not clients */}
         {!providerSlug && !provider && (!client || client.length === 0) && (
           <ProviderOnboarding />
         )}
         
-        {/* Provider dashboard */}
-        {provider && <ProviderDashboard provider={provider} />}
+        {/* Provider dashboard - only for users who are providers and didn't come through provider link */}
+        {!providerSlug && provider && <ProviderDashboard provider={provider} />}
         
         {/* Client dashboard - handles multiple providers */}
         {client && client.length > 0 && <ClientDashboard clients={client} />}
