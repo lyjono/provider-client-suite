@@ -1,4 +1,3 @@
-
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -55,6 +54,8 @@ export const ProviderLandingPage = ({ providerSlug }: ProviderLandingPageProps) 
     queryKey: ['provider-landing', providerSlug],
     queryFn: async (): Promise<ExtendedProvider | null> => {
       try {
+        console.log('Fetching provider with slug:', providerSlug);
+        
         // Start with basic provider data that we know exists
         const { data: basicProvider, error: basicError } = await supabase
           .from('providers')
@@ -66,54 +67,63 @@ export const ProviderLandingPage = ({ providerSlug }: ProviderLandingPageProps) 
           return null;
         }
 
+        console.log('Basic provider data:', basicProvider);
+
         if (!basicProvider || basicProvider.length === 0) {
+          console.log('No provider found for slug:', providerSlug);
           return null;
         }
 
-        const provider = basicProvider[0];
+        const baseProvider = basicProvider[0];
+        
+        // Create extended provider object
+        const extendedProvider: ExtendedProvider = {
+          ...baseProvider
+        };
 
         // Try to get additional data with relations if available
         try {
           // Get expertise area if available
-          if (provider.expertise_area_id) {
+          if (baseProvider.expertise_area_id) {
             const { data: expertiseData } = await supabase
               .from('expertise_areas')
               .select('name')
-              .eq('id', provider.expertise_area_id)
-              .single();
+              .eq('id', baseProvider.expertise_area_id)
+              .maybeSingle();
             if (expertiseData) {
-              provider.expertise_areas = expertiseData;
+              extendedProvider.expertise_areas = expertiseData;
             }
           }
 
           // Get city if available
-          if (provider.city_id) {
+          if (baseProvider.city_id) {
             const { data: cityData } = await supabase
               .from('cities')
               .select('name')
-              .eq('id', provider.city_id)
-              .single();
+              .eq('id', baseProvider.city_id)
+              .maybeSingle();
             if (cityData) {
-              provider.cities = cityData;
+              extendedProvider.cities = cityData;
             }
           }
 
           // Get country if available
-          if (provider.country_id) {
+          if (baseProvider.country_id) {
             const { data: countryData } = await supabase
               .from('countries')
               .select('name')
-              .eq('id', provider.country_id)
-              .single();
+              .eq('id', baseProvider.country_id)
+              .maybeSingle();
             if (countryData) {
-              provider.countries = countryData;
+              extendedProvider.countries = countryData;
             }
           }
         } catch (relationError) {
           console.warn('Could not fetch provider relations, using basic data:', relationError);
         }
 
-        return provider as ExtendedProvider;
+        console.log('Final extended provider:', extendedProvider);
+        return extendedProvider;
       } catch (error) {
         console.error('Provider query failed:', error);
         return null;
