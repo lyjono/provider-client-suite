@@ -154,21 +154,14 @@ const Dashboard = () => {
       } else if (existingConnection) {
         // User is logged in and already connected - don't show landing page
         setShowLandingPage(false);
-      } else if (client && client.length > 0) {
-        // User has client records but not connected to this specific provider
-        // Check if any of their client records are for this provider
-        const isConnectedToThisProvider = client.some(c => 
-          c.providers?.provider_slug === providerSlug
-        );
-        setShowLandingPage(!isConnectedToThisProvider);
       } else {
-        // User is logged in but has no client records - show landing page
+        // User is logged in but not connected to this provider - show landing page
         setShowLandingPage(true);
       }
     } else {
       setShowLandingPage(false);
     }
-  }, [providerSlug, isDemoClient, user, existingConnection, client]);
+  }, [providerSlug, isDemoClient, user, existingConnection]);
 
   if (clientLoading || ((!client || client.length === 0) && providerLoading)) {
     return (
@@ -193,7 +186,7 @@ const Dashboard = () => {
           <DemoClientOnboarding />
         )}
         
-        {/* Show landing page for provider links - only for non-authenticated users or users not connected to this provider */}
+        {/* Show landing page for provider links */}
         {!isDemoClient && showLandingPage && providerSlug && (
           <ProviderLandingPage 
             providerSlug={providerSlug}
@@ -211,7 +204,7 @@ const Dashboard = () => {
         )}
         
         {/* If user is connected to the provider, show client dashboard */}
-        {!isDemoClient && !showLandingPage && (providerSlug && user && (existingConnection || (client && client.some(c => c.providers?.provider_slug === providerSlug)))) && (
+        {!isDemoClient && !showLandingPage && providerSlug && user && existingConnection && (
           <ClientDashboard clients={client || []} />
         )}
         
