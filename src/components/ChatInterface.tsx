@@ -17,9 +17,14 @@ interface ChatInterfaceProps {
 interface Message {
   id: string;
   conversation_id: string;
-  sender_type: 'provider' | 'client';
-  message: string;
+  sender_id: string;
+  content: string;
   created_at: string;
+  is_read: boolean;
+  message_type: string;
+  file_url?: string;
+  file_name?: string;
+  file_size?: number;
 }
 
 interface Conversation {
@@ -85,8 +90,9 @@ export const ChatInterface = ({ userType, userId }: ChatInterfaceProps) => {
 
       const { error } = await supabase.from('messages').insert({
         conversation_id: selectedConversation,
-        sender_type: userType,
-        message: messageText.trim(),
+        sender_id: userId,
+        content: messageText.trim(),
+        message_type: 'text',
       });
 
       if (error) throw error;
@@ -159,6 +165,10 @@ export const ChatInterface = ({ userType, userId }: ChatInterfaceProps) => {
       hour: '2-digit', 
       minute: '2-digit' 
     });
+  };
+
+  const isMyMessage = (message: Message) => {
+    return message.sender_id === userId;
   };
 
   if (conversationsLoading) {
@@ -246,20 +256,20 @@ export const ChatInterface = ({ userType, userId }: ChatInterfaceProps) => {
                     <div
                       key={message.id}
                       className={`flex ${
-                        message.sender_type === userType ? 'justify-end' : 'justify-start'
+                        isMyMessage(message) ? 'justify-end' : 'justify-start'
                       }`}
                     >
                       <div
                         className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                          message.sender_type === userType
+                          isMyMessage(message)
                             ? 'bg-blue-600 text-white'
                             : 'bg-gray-100 text-gray-900'
                         }`}
                       >
-                        <p className="text-sm">{message.message}</p>
+                        <p className="text-sm">{message.content}</p>
                         <p
                           className={`text-xs mt-1 ${
-                            message.sender_type === userType
+                            isMyMessage(message)
                               ? 'text-blue-100'
                               : 'text-gray-500'
                           }`}
