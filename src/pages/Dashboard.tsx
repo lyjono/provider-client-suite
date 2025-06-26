@@ -63,11 +63,22 @@ const Dashboard = () => {
     );
   }
 
+  // If user has client records, always show client dashboard
+  if (client && client.length > 0) {
+    return (
+      <AuthGuard>
+        <div className="min-h-screen bg-gray-50">
+          <ClientDashboard clients={client} />
+        </div>
+      </AuthGuard>
+    );
+  }
+
   return (
     <AuthGuard>
       <div className="min-h-screen bg-gray-50">
         {/* Demo client onboarding flow - simple registration without provider */}
-        {isDemoClient && (!client || client.length === 0) && (
+        {isDemoClient && (
           <DemoClientOnboarding />
         )}
         
@@ -80,20 +91,17 @@ const Dashboard = () => {
         )}
         
         {/* Client onboarding flow - for users coming via provider link */}
-        {!isDemoClient && !showProviderPresentation && providerSlug && (!client || client.length === 0) && (
+        {!isDemoClient && !showProviderPresentation && providerSlug && (
           <ClientOnboarding providerSlug={providerSlug} />
         )}
         
         {/* Provider onboarding flow - for users without provider slug who are not clients */}
-        {!isDemoClient && !providerSlug && !provider && (!client || client.length === 0) && (
+        {!isDemoClient && !providerSlug && !provider && (
           <ProviderOnboarding />
         )}
         
         {/* Provider dashboard - only for users who are providers and didn't come through provider link */}
         {!isDemoClient && !providerSlug && provider && <ProviderDashboard provider={provider} />}
-        
-        {/* Client dashboard - handles multiple providers */}
-        {client && client.length > 0 && <ClientDashboard clients={client} />}
       </div>
     </AuthGuard>
   );
