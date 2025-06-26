@@ -23,11 +23,37 @@ const Dashboard = () => {
   console.log('Dashboard - providerSlug:', providerSlug);
   console.log('Dashboard - isDemoClient:', isDemoClient);
 
-  // Check if user is a client with their provider data
-  const { data: client, isLoading: clientLoading } = useQuery({
-    queryKey: ['client', user?.id],
+  // First, get all client records for this user (regardless of provider connections)
+  const { data: allClientRecords, isLoading: clientLoading } = useQuery({
+    queryKey: ['all-clients', user?.id],
     queryFn: async () => {
-      if (!user?.id) return null;
+      if (!user?.id) return [];
+      try {
+        const { data: clientData, error } = await supabase
+          .from('clients')
+          .select('*')
+          .eq('user_id', user.id);
+        
+        if (error) {
+          console.error('All clients query error:', error);
+          return [];
+        }
+        
+        console.log('All client records:', clientData);
+        return clientData || [];
+      } catch (error) {
+        console.error('All clients query failed:', error);
+        return [];
+      }
+    },
+    enabled: !!user?.id,
+  });
+
+  // Get client records with provider info for dashboard display
+  const { data: clientsWithProviders } = useQuery({
+    queryKey: ['clients-with-providers', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return [];
       try {
         const { data: clientData, error } = await supabase
           .from('clients')
@@ -47,21 +73,21 @@ const Dashboard = () => {
           .eq('user_id', user.id);
         
         if (error) {
-          console.error('Client query error:', error);
+          console.error('Clients with providers query error:', error);
           return [];
         }
         
-        console.log('Client query result:', clientData);
+        console.log('Clients with providers:', clientData);
         return clientData || [];
       } catch (error) {
-        console.error('Client query failed:', error);
+        console.error('Clients with providers query failed:', error);
         return [];
       }
     },
     enabled: !!user?.id,
   });
 
-  // Only check if user is a provider if they don't have client records
+  // Only check if user is a provider if they don't have any client records
   const { data: provider, isLoading: providerLoading } = useQuery({
     queryKey: ['provider', user?.id],
     queryFn: async () => {
@@ -84,13 +110,13 @@ const Dashboard = () => {
         return null;
       }
     },
-    enabled: !!user?.id && (!client || client.length === 0),
+    enabled: !!user?.id && (!allClientRecords || allClientRecords.length === 0),
   });
 
-  // Helper function to check if user is connected to the current provider
+  // Check if current user is already connected to the current provider
   const isConnectedToCurrentProvider = () => {
-    if (!providerSlug || !client || client.length === 0) return false;
-    return client.some(c => c.providers?.provider_slug === providerSlug);
+    if (!providerSlug || !clientsWithProviders || clientsWithProviders.length === 0) return false;
+    return clientsWithProviders.some(c => c.providers?.provider_slug === providerSlug);
   };
 
   useEffect(() => {
@@ -108,7 +134,7 @@ const Dashboard = () => {
     }
   }, [providerSlug, isDemoClient, user]);
 
-  if (clientLoading || ((!client || client.length === 0) && providerLoading)) {
+  if (clientLoading || ((!allClientRecords || allClientRecords.length === 0) && providerLoading)) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
@@ -117,13 +143,15 @@ const Dashboard = () => {
   }
 
   const connectedToCurrentProvider = isConnectedToCurrentProvider();
+  const hasAnyClientRecords = allClientRecords && allClientRecords.length > 0;
 
   console.log('Dashboard - Final state:');
-  console.log('  client:', client);
-  console.log('  client.length:', client?.length);
+  console.log('  allClientRecords:', allClientRecords);
+  console.log('  clientsWithProviders:', clientsWithProviders);
   console.log('  provider:', provider);
   console.log('  showLandingPage:', showLandingPage);
   console.log('  isConnectedToCurrentProvider:', connectedToCurrentProvider);
+  console.log('  hasAnyClientRecords:', hasAnyClientRecords);
 
   return (
     <AuthGuard>
@@ -146,17 +174,17 @@ const Dashboard = () => {
         )}
         
         {/* If user has client records and no provider link, show client dashboard */}
-        {!isDemoClient && !providerSlug && client && client.length > 0 && (
-          <ClientDashboard clients={client} />
+        {!isDemoClient && !providerSlug && clientsWithProviders && clientsWithProviders.length > 0 && (
+          <ClientDashboard clients={clientsWithProviders} />
         )}
         
         {/* If user is connected to the provider, show client dashboard */}
         {!isDemoClient && providerSlug && user && connectedToCurrentProvider && (
-          <ClientDashboard clients={client || []} />
+          <ClientDashboard clients={clientsWithProviders || []} />
         )}
         
         {/* Provider onboarding flow - for users without provider slug who are not clients */}
-        {!isDemoClient && !providerSlug && !provider && (!client || client.length === 0) && (
+        {!isDemoClient && !providerSlug && !provider && !hasAnyClientRecords && (
           <ProviderOnboarding />
         )}
         
