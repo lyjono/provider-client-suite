@@ -39,6 +39,22 @@ export const ClientOnboarding = ({ providerSlug }: ClientOnboardingProps) => {
     },
   });
 
+  // Check if user already has a client record with this provider
+  const { data: existingClientRecord } = useQuery({
+    queryKey: ['existing-client-record', user?.id, provider?.id],
+    queryFn: async () => {
+      if (!user?.id || !provider?.id) return null;
+      const { data } = await supabase
+        .from('clients')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('provider_id', provider.id)
+        .maybeSingle();
+      return data;
+    },
+    enabled: !!user?.id && !!provider?.id,
+  });
+
   // Fetch countries
   const { data: countries } = useQuery({
     queryKey: ['countries'],
@@ -69,11 +85,14 @@ export const ClientOnboarding = ({ providerSlug }: ClientOnboardingProps) => {
 
     try {
       if (!provider) throw new Error('Provider not found');
+      if (!user?.id) throw new Error('User not authenticated');
 
-      // Insert into clients table, not providers table
+      console.log('Creating client record with provider_id:', provider.id);
+
+      // Insert into clients table with proper provider_id
       const { error } = await supabase.from('clients').insert({
-        user_id: user?.id,
-        provider_id: provider.id,
+        user_id: user.id,
+        provider_id: provider.id, // This is the key fix - ensuring provider_id is set
         email: formData.email,
         first_name: formData.firstName,
         last_name: formData.lastName,
@@ -83,7 +102,12 @@ export const ClientOnboarding = ({ providerSlug }: ClientOnboardingProps) => {
         country_id: formData.countryId || null,
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Database error:', error);
+        throw error;
+      }
+
+      console.log('Client record created successfully');
 
       toast({
         title: "Registration successful!",
@@ -93,6 +117,7 @@ export const ClientOnboarding = ({ providerSlug }: ClientOnboardingProps) => {
       // Refresh the page to load the client dashboard
       window.location.reload();
     } catch (error: any) {
+      console.error('Error creating client record:', error);
       toast({
         title: "Error creating profile",
         description: error.message,
@@ -102,6 +127,16 @@ export const ClientOnboarding = ({ providerSlug }: ClientOnboardingProps) => {
       setLoading(false);
     }
   };
+
+  // If user is already connected to this provider, redirect them
+  if (existingClientRecord) {
+    toast({
+      title: "Already connected",
+      description: `You're already connected with ${provider?.first_name} ${provider?.last_name}`,
+    });
+    window.location.href = '/dashboard';
+    return null;
+  }
 
   if (!provider) {
     return (
