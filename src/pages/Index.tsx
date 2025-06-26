@@ -75,7 +75,12 @@ const Index = () => {
                 <>
                   <Link to="/auth">
                     <Button size="lg" className="px-8 py-3">
-                      Get Started Free
+                      Get Started as Provider
+                    </Button>
+                  </Link>
+                  <Link to="/dashboard?provider=test-provider">
+                    <Button variant="outline" size="lg" className="px-8 py-3">
+                      Onboard as Client
                     </Button>
                   </Link>
                   <Link to="/auth">
