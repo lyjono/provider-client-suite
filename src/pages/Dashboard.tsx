@@ -168,7 +168,7 @@ const Dashboard = () => {
           />
         )}
         
-        {/* Client onboarding flow - for authenticated users who want to connect to a provider */}
+        {/* Client onboarding flow - for authenticated users who want to connect to a provider they're not already connected to */}
         {!isDemoClient && providerSlug && user && !connectedToCurrentProvider && (
           <ClientOnboarding providerSlug={providerSlug} />
         )}
