@@ -1,3 +1,4 @@
+
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -49,50 +50,6 @@ export const ProviderLandingPage = ({ providerSlug }: ProviderLandingPageProps) 
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  // Debug query to see all providers with enhanced debugging
-  const { data: allProviders } = useQuery({
-    queryKey: ['all-providers-debug'],
-    queryFn: async () => {
-      console.log('🔍 Debug: Starting provider lookup...');
-      console.log('🔍 Current user:', user?.id);
-      console.log('🔍 Looking for slug:', providerSlug);
-      
-      try {
-        // Try a simple count first
-        const { count, error: countError } = await supabase
-          .from('providers')
-          .select('*', { count: 'exact', head: true });
-        
-        console.log('🔍 Total providers count:', count);
-        if (countError) {
-          console.error('🔍 Count error:', countError);
-        }
-        
-        // Try to fetch all providers
-        const { data, error } = await supabase
-          .from('providers')
-          .select('provider_slug, first_name, last_name, company_name, user_id');
-        
-        console.log('🔍 All providers query result:', data);
-        console.log('🔍 All providers query error:', error);
-        
-        if (error) {
-          console.error('🔍 Error details:', {
-            message: error.message,
-            details: error.details,
-            hint: error.hint,
-            code: error.code
-          });
-        }
-        
-        return data || [];
-      } catch (error) {
-        console.error('🔍 Unexpected error:', error);
-        return [];
-      }
-    },
-  });
-
   // Fetch provider info with case-insensitive search and fallback
   const { data: provider, isLoading } = useQuery({
     queryKey: ['provider-landing', providerSlug],
@@ -106,32 +63,23 @@ export const ProviderLandingPage = ({ providerSlug }: ProviderLandingPageProps) 
           .select('*')
           .eq('provider_slug', providerSlug);
 
-        console.log('Exact match result:', basicProvider);
-        console.log('Exact match error:', basicError);
-
         // If no exact match, try case-insensitive search
         if (!basicProvider || basicProvider.length === 0) {
-          console.log('Trying case-insensitive search...');
           const { data: caseInsensitiveResult, error: caseError } = await supabase
             .from('providers')
             .select('*')
             .ilike('provider_slug', providerSlug);
           
-          console.log('Case-insensitive result:', caseInsensitiveResult);
-          console.log('Case-insensitive error:', caseError);
           basicProvider = caseInsensitiveResult;
         }
 
         // If still no match, try searching by company name or name
         if (!basicProvider || basicProvider.length === 0) {
-          console.log('Trying company name search...');
           const { data: companySearchResult, error: companyError } = await supabase
             .from('providers')
             .select('*')
             .or(`company_name.ilike.%${providerSlug}%,first_name.ilike.%${providerSlug}%,last_name.ilike.%${providerSlug}%`);
           
-          console.log('Company/name search result:', companySearchResult);
-          console.log('Company/name search error:', companyError);
           basicProvider = companySearchResult;
         }
 
@@ -139,8 +87,6 @@ export const ProviderLandingPage = ({ providerSlug }: ProviderLandingPageProps) 
           console.error('Basic provider query error:', basicError);
           return null;
         }
-
-        console.log('Final basic provider data:', basicProvider);
 
         if (!basicProvider || basicProvider.length === 0) {
           console.log('No provider found for slug:', providerSlug);
@@ -195,7 +141,6 @@ export const ProviderLandingPage = ({ providerSlug }: ProviderLandingPageProps) 
           console.warn('Could not fetch provider relations, using basic data:', relationError);
         }
 
-        console.log('Final extended provider:', extendedProvider);
         return extendedProvider;
       } catch (error) {
         console.error('Provider query failed:', error);
@@ -311,34 +256,7 @@ export const ProviderLandingPage = ({ providerSlug }: ProviderLandingPageProps) 
             <p className="text-center text-red-600 mb-4">Provider not found</p>
             <div className="text-sm text-gray-600">
               <p>Looking for: <strong>{providerSlug}</strong></p>
-              <p className="mt-2">Database appears to be empty or access is restricted.</p>
-              {allProviders && allProviders.length > 0 ? (
-                <div className="mt-4">
-                  <p className="font-medium">Available providers:</p>
-                  <ul className="mt-2 space-y-1">
-                    {allProviders.map((p, index) => (
-                      <li key={index} className="text-xs">
-                        • {p.provider_slug} ({p.first_name} {p.last_name}
-                        {p.company_name && ` - ${p.company_name}`})
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : (
-                <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
-                  <p className="text-yellow-800 text-xs">
-                    <strong>Debug Info:</strong> No providers found in database. This could be due to:
-                  </p>
-                  <ul className="text-yellow-700 text-xs mt-1 ml-4 list-disc">
-                    <li>Empty database</li>
-                    <li>Row Level Security blocking access</li>
-                    <li>Database connection issues</li>
-                  </ul>
-                  <p className="text-yellow-700 text-xs mt-2">
-                    Check the browser console for detailed error logs.
-                  </p>
-                </div>
-              )}
+              <p className="mt-2">Please check the URL or contact support if you believe this is an error.</p>
             </div>
           </CardContent>
         </Card>
