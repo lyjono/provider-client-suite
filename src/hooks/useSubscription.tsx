@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 interface SubscriptionData {
   subscribed: boolean;
@@ -12,6 +12,7 @@ interface SubscriptionData {
 
 export const useSubscription = () => {
   const { user, session } = useAuth();
+  const queryClient = useQueryClient();
   const [subscriptionData, setSubscriptionData] = useState<SubscriptionData>({
     subscribed: false,
     subscription_tier: null,
@@ -19,7 +20,7 @@ export const useSubscription = () => {
   });
 
   // Query to get subscription data from database
-  const { data: dbSubscription, isLoading } = useQuery({
+  const { data: dbSubscription, isLoading, refetch } = useQuery({
     queryKey: ['subscription', user?.id],
     queryFn: async () => {
       if (!user?.id) return null;
@@ -40,7 +41,7 @@ export const useSubscription = () => {
     enabled: !!user?.id,
   });
 
-  // Function to check subscription status with Stripe
+  // Function to check subscription status with Stripe and refresh local data
   const checkSubscription = async () => {
     if (!session?.access_token) return;
 
@@ -53,11 +54,20 @@ export const useSubscription = () => {
 
       if (error) throw error;
 
+      console.log('Subscription check result:', data);
+
       setSubscriptionData({
         subscribed: data.subscribed || false,
         subscription_tier: data.subscription_tier,
         subscription_end: data.subscription_end
       });
+
+      // Refresh the query to get updated data
+      await refetch();
+      
+      // Also invalidate and refetch provider data if it exists
+      queryClient.invalidateQueries({ queryKey: ['provider'] });
+
     } catch (error) {
       console.error('Error checking subscription:', error);
     }
@@ -114,11 +124,25 @@ export const useSubscription = () => {
     }
   }, [user, session]);
 
+  // Listen for window focus to refresh subscription status
+  useEffect(() => {
+    const handleFocus = () => {
+      if (user && session) {
+        console.log('Window focused, checking subscription status...');
+        checkSubscription();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [user, session]);
+
   return {
     ...subscriptionData,
     isLoading,
     checkSubscription,
     createCheckoutSession,
-    openCustomerPortal
+    openCustomerPortal,
+    refreshSubscription: refetch
   };
 };

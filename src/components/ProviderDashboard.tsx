@@ -1,16 +1,18 @@
+
 import { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Users, Settings, LogOut, Link, User, MessageCircle, Calendar, FileText, Crown } from 'lucide-react';
+import { Users, Settings, LogOut, Link, User, MessageCircle, Crown, RefreshCw } from 'lucide-react';
 import { ClientsManagement } from '@/components/ClientsManagement';
 import { ProviderSettings } from '@/components/ProviderSettings';
 import { ProviderClientDetails } from '@/components/ProviderClientDetails';
 import { SubscriptionUpgrade } from '@/components/SubscriptionUpgrade';
 import { BlurredContent } from '@/components/BlurredContent';
 import { useProviderClientInteraction } from '@/hooks/useSubscriptionLimits';
+import { useSubscription } from '@/hooks/useSubscription';
 import { toast } from '@/hooks/use-toast';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -21,8 +23,10 @@ interface ProviderDashboardProps {
 
 export const ProviderDashboard = ({ provider }: ProviderDashboardProps) => {
   const { signOut } = useAuth();
+  const { checkSubscription, subscribed, subscription_tier } = useSubscription();
   const [currentView, setCurrentView] = useState<'clients' | 'settings' | 'subscription'>('clients');
   const [selectedClient, setSelectedClient] = useState<any>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Fetch clients
   const { data: clients } = useQuery({
@@ -40,6 +44,25 @@ export const ProviderDashboard = ({ provider }: ProviderDashboardProps) => {
       return data || [];
     },
   });
+
+  const handleRefreshSubscription = async () => {
+    setIsRefreshing(true);
+    try {
+      await checkSubscription();
+      toast({
+        title: "Subscription Updated",
+        description: "Your subscription status has been refreshed successfully.",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to refresh subscription status. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   const copyProviderLink = () => {
     const link = `${window.location.origin}/dashboard?provider=${provider.provider_slug}`;
@@ -77,6 +100,10 @@ export const ProviderDashboard = ({ provider }: ProviderDashboardProps) => {
     });
   };
 
+  // Use the subscription tier from the subscription hook, fallback to provider data
+  const currentTier = subscription_tier || provider.subscription_tier || 'free';
+  const isSubscribed = subscribed || false;
+
   if (selectedClient) {
     return (
       <ProviderClientDetails 
@@ -98,8 +125,8 @@ export const ProviderDashboard = ({ provider }: ProviderDashboardProps) => {
                 {provider.company_name || `${provider.first_name} ${provider.last_name}`}
               </h1>
               <div className="flex items-center space-x-2 mt-1">
-                <Badge className={getTierBadgeColor(provider.subscription_tier)}>
-                  {provider.subscription_tier?.toUpperCase()} Plan
+                <Badge className={getTierBadgeColor(currentTier)}>
+                  {currentTier?.toUpperCase()} Plan
                 </Badge>
                 <Button
                   variant="outline"
@@ -109,6 +136,16 @@ export const ProviderDashboard = ({ provider }: ProviderDashboardProps) => {
                 >
                   <Link className="h-4 w-4" />
                   <span>Copy Client Link</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRefreshSubscription}
+                  disabled={isRefreshing}
+                  className="flex items-center space-x-1"
+                >
+                  <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                  <span>Refresh Status</span>
                 </Button>
               </div>
             </div>
@@ -123,10 +160,10 @@ export const ProviderDashboard = ({ provider }: ProviderDashboardProps) => {
               <Button 
                 variant={currentView === 'subscription' ? 'default' : 'outline'} 
                 onClick={() => setCurrentView('subscription')}
-                className={provider.subscription_tier === 'free' ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white' : ''}
+                className={currentTier === 'free' ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white' : ''}
               >
                 <Crown className="h-4 w-4 mr-2" />
-                {provider.subscription_tier === 'free' ? 'Upgrade' : 'Subscription'}
+                {currentTier === 'free' ? 'Upgrade' : 'Subscription'}
               </Button>
               <Button 
                 variant={currentView === 'settings' ? 'default' : 'outline'} 
@@ -150,7 +187,7 @@ export const ProviderDashboard = ({ provider }: ProviderDashboardProps) => {
           <ProviderSettings provider={provider} />
         ) : currentView === 'subscription' ? (
           <SubscriptionUpgrade 
-            currentTier={provider.subscription_tier || 'free'} 
+            currentTier={currentTier as 'free' | 'starter' | 'pro'} 
             onUpgrade={handleUpgrade}
           />
         ) : (

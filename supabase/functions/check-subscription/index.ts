@@ -60,6 +60,15 @@ serve(async (req) => {
         subscription_end: null,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'email' });
+      
+      // Also update providers table
+      await supabaseClient.from("providers").update({
+        subscription_tier: 'free',
+        subscription_end_date: null,
+        stripe_customer_id: null,
+        updated_at: new Date().toISOString(),
+      }).eq('user_id', user.id);
+      
       return new Response(JSON.stringify({ subscribed: false }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 200,
@@ -96,8 +105,10 @@ serve(async (req) => {
       logStep("Determined subscription tier", { priceId, amount, subscriptionTier });
     } else {
       logStep("No active subscription found");
+      subscriptionTier = null;
     }
 
+    // Update subscribers table
     await supabaseClient.from("subscribers").upsert({
       email: user.email,
       user_id: user.id,
@@ -108,7 +119,20 @@ serve(async (req) => {
       updated_at: new Date().toISOString(),
     }, { onConflict: 'email' });
 
-    logStep("Updated database with subscription info", { subscribed: hasActiveSub, subscriptionTier });
+    // Update providers table as well
+    await supabaseClient.from("providers").update({
+      subscription_tier: subscriptionTier || 'free',
+      subscription_end_date: subscriptionEnd,
+      stripe_customer_id: customerId,
+      updated_at: new Date().toISOString(),
+    }).eq('user_id', user.id);
+
+    logStep("Updated both subscribers and providers tables", { 
+      subscribed: hasActiveSub, 
+      subscriptionTier,
+      customerId 
+    });
+    
     return new Response(JSON.stringify({
       subscribed: hasActiveSub,
       subscription_tier: subscriptionTier,
