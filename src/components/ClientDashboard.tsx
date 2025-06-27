@@ -11,15 +11,28 @@ import { ClientProviderDetails } from '@/components/ClientProviderDetails';
 
 interface ClientDashboardProps {
   clients: any[];
+  allClients?: any[]; // Add this to handle standalone clients
 }
 
-export const ClientDashboard = ({ clients }: ClientDashboardProps) => {
+export const ClientDashboard = ({ clients, allClients = [] }: ClientDashboardProps) => {
   const { signOut } = useAuth();
   const [currentView, setCurrentView] = useState<'providers' | 'settings'>('providers');
   const [selectedProvider, setSelectedProvider] = useState<any>(null);
 
-  // Get the first client for user info
-  const userClient = clients[0];
+  // Get the first client for user info - prioritize from allClients if available
+  const userClient = allClients.length > 0 ? allClients[0] : (clients.length > 0 ? clients[0] : null);
+  
+  if (!userClient) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">No Client Data Found</h1>
+          <p className="text-gray-600">Please try refreshing the page or contact support.</p>
+        </div>
+      </div>
+    );
+  }
+  
   const userName = `${userClient.first_name} ${userClient.last_name}`;
 
   // Filter clients that have providers
