@@ -3,6 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Check, Crown, Star, Zap } from 'lucide-react';
+import { useSubscription } from '@/hooks/useSubscription';
+import { useState } from 'react';
 
 interface SubscriptionUpgradeProps {
   currentTier: 'free' | 'starter' | 'pro';
@@ -10,6 +12,9 @@ interface SubscriptionUpgradeProps {
 }
 
 export const SubscriptionUpgrade = ({ currentTier, onUpgrade }: SubscriptionUpgradeProps) => {
+  const { createCheckoutSession } = useSubscription();
+  const [loading, setLoading] = useState<string | null>(null);
+
   const plans = [
     {
       id: 'free',
@@ -40,6 +45,18 @@ export const SubscriptionUpgrade = ({ currentTier, onUpgrade }: SubscriptionUpgr
       current: currentTier === 'pro'
     }
   ];
+
+  const handleUpgradeClick = async (tier: 'starter' | 'pro') => {
+    try {
+      setLoading(tier);
+      await createCheckoutSession(tier);
+      onUpgrade(tier);
+    } catch (error) {
+      console.error('Error creating checkout session:', error);
+    } finally {
+      setLoading(null);
+    }
+  };
 
   return (
     <div className="max-w-6xl mx-auto p-6">
@@ -99,14 +116,16 @@ export const SubscriptionUpgrade = ({ currentTier, onUpgrade }: SubscriptionUpgr
                     </Button>
                   ) : (
                     <Button 
-                      onClick={() => onUpgrade(plan.id as 'starter' | 'pro')}
+                      onClick={() => handleUpgradeClick(plan.id as 'starter' | 'pro')}
+                      disabled={loading === plan.id}
                       className={`w-full ${
                         plan.popular 
                           ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600' 
                           : ''
                       }`}
                     >
-                      {currentTier === 'free' ? 'Upgrade Now' : 
+                      {loading === plan.id ? 'Processing...' : 
+                       currentTier === 'free' ? 'Upgrade Now' : 
                        plan.id === 'pro' ? 'Upgrade to Pro' : 'Choose Plan'}
                     </Button>
                   )}
