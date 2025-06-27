@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Check, Crown, Star, Zap } from 'lucide-react';
 import { useSubscription } from '@/hooks/useSubscription';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { toast } from '@/hooks/use-toast';
 
 interface SubscriptionUpgradeProps {
   currentTier: 'free' | 'starter' | 'pro';
@@ -51,12 +52,46 @@ export const SubscriptionUpgrade = ({ currentTier, onUpgrade }: SubscriptionUpgr
       setLoading(tier);
       await createCheckoutSession(tier);
       onUpgrade(tier);
+      
+      // Show success message and reset loading after a short delay
+      toast({
+        title: "Redirecting to Stripe",
+        description: "You're being redirected to complete your subscription upgrade.",
+      });
+      
+      // Reset loading state after 3 seconds to handle cases where user might close the tab
+      setTimeout(() => {
+        setLoading(null);
+      }, 3000);
+      
     } catch (error) {
       console.error('Error creating checkout session:', error);
-    } finally {
       setLoading(null);
+      toast({
+        title: "Error",
+        description: "Failed to create checkout session. Please try again.",
+        variant: "destructive",
+      });
     }
   };
+
+  // Reset loading state when component unmounts or when focus returns to window
+  useEffect(() => {
+    const handleFocus = () => {
+      // Reset loading state when user returns to the page
+      if (loading) {
+        setTimeout(() => {
+          setLoading(null);
+        }, 1000);
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      setLoading(null); // Clean up on unmount
+    };
+  }, [loading]);
 
   return (
     <div className="max-w-6xl mx-auto p-6">
@@ -70,6 +105,8 @@ export const SubscriptionUpgrade = ({ currentTier, onUpgrade }: SubscriptionUpgr
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {plans.map((plan) => {
           const Icon = plan.icon;
+          const isLoading = loading === plan.id;
+          
           return (
             <Card 
               key={plan.id} 
@@ -117,14 +154,14 @@ export const SubscriptionUpgrade = ({ currentTier, onUpgrade }: SubscriptionUpgr
                   ) : (
                     <Button 
                       onClick={() => handleUpgradeClick(plan.id as 'starter' | 'pro')}
-                      disabled={loading === plan.id}
+                      disabled={isLoading || loading !== null}
                       className={`w-full ${
                         plan.popular 
                           ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600' 
                           : ''
                       }`}
                     >
-                      {loading === plan.id ? 'Processing...' : 
+                      {isLoading ? 'Processing...' : 
                        currentTier === 'free' ? 'Upgrade Now' : 
                        plan.id === 'pro' ? 'Upgrade to Pro' : 'Choose Plan'}
                     </Button>
