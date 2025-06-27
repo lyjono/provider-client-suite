@@ -116,7 +116,7 @@ export const AppointmentsManagement = ({ providerId }: AppointmentsManagementPro
                             with {getClientName(appointment)}
                           </p>
 
-                          {appointment.appointment_type === 'online' && appointment.video_call_link && (
+                          {appointment.appointment_type === 'online' && appointment.video_call_link && appointment.video_call_link.startsWith('room-') && (
                             <div className="pt-2">
                               <VideoCallButton
                                 roomId={appointment.video_call_link}
@@ -170,7 +170,7 @@ export const AppointmentsManagement = ({ providerId }: AppointmentsManagementPro
                           with {getClientName(appointment)}
                         </p>
 
-                        {appointment.appointment_type === 'online' && appointment.video_call_link && (
+                        {appointment.appointment_type === 'online' && appointment.video_call_link && appointment.video_call_link.startsWith('room-') && (
                           <div className="pt-1">
                             <VideoCallButton
                               roomId={appointment.video_call_link}
