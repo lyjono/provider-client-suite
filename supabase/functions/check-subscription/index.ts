@@ -78,34 +78,64 @@ serve(async (req) => {
     const customerId = customers.data[0].id;
     logStep("Found Stripe customer", { customerId });
 
+    // Get ALL subscriptions (active, canceled, past_due, etc.) to properly handle cancellations
     const subscriptions = await stripe.subscriptions.list({
       customer: customerId,
-      status: "active",
-      limit: 1,
+      limit: 100, // Get all subscriptions to find the most recent one
     });
-    const hasActiveSub = subscriptions.data.length > 0;
+
+    logStep("Found subscriptions", { 
+      total: subscriptions.data.length,
+      statuses: subscriptions.data.map(sub => ({ id: sub.id, status: sub.status, cancel_at_period_end: sub.cancel_at_period_end }))
+    });
+
+    // Find the most recent subscription that's either active or canceled
+    const relevantSub = subscriptions.data
+      .filter(sub => ['active', 'canceled', 'past_due'].includes(sub.status))
+      .sort((a, b) => b.created - a.created)[0];
+
+    let hasActiveSub = false;
     let subscriptionTier = null;
     let subscriptionEnd = null;
 
-    if (hasActiveSub) {
-      const subscription = subscriptions.data[0];
-      subscriptionEnd = new Date(subscription.current_period_end * 1000).toISOString();
-      logStep("Active subscription found", { subscriptionId: subscription.id, endDate: subscriptionEnd });
-      // Determine subscription tier from price
-      const priceId = subscription.items.data[0].price.id;
-      const price = await stripe.prices.retrieve(priceId);
-      const amount = price.unit_amount || 0;
-      if (amount <= 2999) {
-        subscriptionTier = "starter";
-      } else if (amount >= 7900) {
-        subscriptionTier = "pro";
+    if (relevantSub) {
+      logStep("Processing subscription", { 
+        id: relevantSub.id, 
+        status: relevantSub.status,
+        cancel_at_period_end: relevantSub.cancel_at_period_end,
+        canceled_at: relevantSub.canceled_at
+      });
+
+      // Consider subscription active only if it's truly active and not marked for cancellation
+      if (relevantSub.status === 'active' && !relevantSub.cancel_at_period_end) {
+        hasActiveSub = true;
+        subscriptionEnd = new Date(relevantSub.current_period_end * 1000).toISOString();
+        
+        // Determine subscription tier from price
+        const priceId = relevantSub.items.data[0].price.id;
+        const price = await stripe.prices.retrieve(priceId);
+        const amount = price.unit_amount || 0;
+        if (amount <= 2999) {
+          subscriptionTier = "starter";
+        } else if (amount >= 7900) {
+          subscriptionTier = "pro";
+        } else {
+          subscriptionTier = "starter";
+        }
+        logStep("Active subscription found", { subscriptionId: relevantSub.id, endDate: subscriptionEnd, tier: subscriptionTier });
       } else {
-        subscriptionTier = "starter";
+        // Subscription is canceled, past_due, or marked for cancellation
+        logStep("Subscription is inactive or canceled", { 
+          status: relevantSub.status,
+          cancel_at_period_end: relevantSub.cancel_at_period_end,
+          canceled_at: relevantSub.canceled_at
+        });
+        hasActiveSub = false;
+        subscriptionTier = null;
+        subscriptionEnd = null;
       }
-      logStep("Determined subscription tier", { priceId, amount, subscriptionTier });
     } else {
-      logStep("No active subscription found");
-      subscriptionTier = null;
+      logStep("No relevant subscription found");
     }
 
     // Update subscribers table
@@ -129,7 +159,7 @@ serve(async (req) => {
 
     logStep("Updated both subscribers and providers tables", { 
       subscribed: hasActiveSub, 
-      subscriptionTier,
+      subscriptionTier: subscriptionTier || 'free',
       customerId 
     });
     
