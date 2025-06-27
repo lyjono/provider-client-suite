@@ -99,7 +99,11 @@ export const ProviderClientDetails = ({ client, provider, onBack }: ProviderClie
           </TabsContent>
 
           <TabsContent value="documents">
-            <DocumentsManagement userType="provider" userId={provider.id} />
+            <DocumentsManagement 
+              userType="provider" 
+              userId={provider.id} 
+              targetClientId={client.id}
+            />
           </TabsContent>
         </Tabs>
       </div>

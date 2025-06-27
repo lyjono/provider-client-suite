@@ -15,6 +15,7 @@ import { toast } from '@/hooks/use-toast';
 interface DocumentsManagementProps {
   userType: 'provider' | 'client';
   userId: string;
+  targetClientId?: string; // Optional - for provider viewing specific client's documents
 }
 
 interface RelationshipOption {
@@ -23,7 +24,7 @@ interface RelationshipOption {
   conversationId: string;
 }
 
-export const DocumentsManagement = ({ userType, userId }: DocumentsManagementProps) => {
+export const DocumentsManagement = ({ userType, userId, targetClientId }: DocumentsManagementProps) => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
@@ -33,11 +34,11 @@ export const DocumentsManagement = ({ userType, userId }: DocumentsManagementPro
 
   // Get all relationships for this user
   const { data: relationships } = useQuery({
-    queryKey: ['relationships', userId, userType],
+    queryKey: ['relationships', userId, userType, targetClientId],
     queryFn: async () => {
       if (userType === 'provider') {
         // For providers, get all conversations with client info
-        const { data } = await supabase
+        let query = supabase
           .from('conversations')
           .select(`
             id,
@@ -45,6 +46,13 @@ export const DocumentsManagement = ({ userType, userId }: DocumentsManagementPro
             clients(first_name, last_name)
           `)
           .eq('provider_id', userId);
+
+        // If targetClientId is provided, filter for specific client
+        if (targetClientId) {
+          query = query.eq('client_id', targetClientId);
+        }
+        
+        const { data } = await query;
         
         return data?.map(conv => ({
           id: conv.id,
@@ -84,21 +92,28 @@ export const DocumentsManagement = ({ userType, userId }: DocumentsManagementPro
     },
   });
 
+  // Auto-select the first (and likely only) relationship when targetClientId is provided
+  const effectiveSelectedRelationship = targetClientId && relationships?.length === 1 
+    ? relationships[0].id 
+    : selectedRelationship;
+
   // Get conversation for upload (based on selected relationship)
   const { data: selectedConversation } = useQuery({
-    queryKey: ['selected-conversation', selectedRelationship],
+    queryKey: ['selected-conversation', effectiveSelectedRelationship, relationships],
     queryFn: async () => {
-      if (selectedRelationship === 'all' || !selectedRelationship) {
-        return relationships?.[0] || null;
+      if (!relationships || relationships.length === 0) return null;
+      
+      if (effectiveSelectedRelationship === 'all' || !effectiveSelectedRelationship) {
+        return relationships[0] || null;
       }
-      return relationships?.find(r => r.id === selectedRelationship) || null;
+      return relationships.find(r => r.id === effectiveSelectedRelationship) || null;
     },
     enabled: !!relationships && relationships.length > 0,
   });
 
   // Fetch shared documents with relationship filtering
   const { data: documents, isLoading } = useQuery({
-    queryKey: ['documents', userId, userType, selectedRelationship],
+    queryKey: ['documents', userId, userType, effectiveSelectedRelationship, targetClientId],
     queryFn: async () => {
       let query = supabase
         .from('shared_documents')
@@ -111,12 +126,16 @@ export const DocumentsManagement = ({ userType, userId }: DocumentsManagementPro
       // Apply filters based on user type and selected relationship
       if (userType === 'provider') {
         query = query.eq('provider_id', userId);
-        if (selectedRelationship !== 'all') {
+        
+        // If targetClientId is provided, filter for specific client
+        if (targetClientId) {
+          query = query.eq('client_id', targetClientId);
+        } else if (effectiveSelectedRelationship !== 'all') {
           // Filter by specific conversation (need to join with conversations)
           const { data: conversationData } = await supabase
             .from('conversations')
             .select('client_id')
-            .eq('id', selectedRelationship)
+            .eq('id', effectiveSelectedRelationship)
             .single();
           
           if (conversationData) {
@@ -125,12 +144,12 @@ export const DocumentsManagement = ({ userType, userId }: DocumentsManagementPro
         }
       } else {
         query = query.eq('client_id', userId);
-        if (selectedRelationship !== 'all') {
+        if (effectiveSelectedRelationship !== 'all') {
           // Filter by specific conversation
           const { data: conversationData } = await supabase
             .from('conversations')
             .select('provider_id')
-            .eq('id', selectedRelationship)
+            .eq('id', effectiveSelectedRelationship)
             .single();
           
           if (conversationData) {
@@ -291,6 +310,12 @@ export const DocumentsManagement = ({ userType, userId }: DocumentsManagementPro
     }
   };
 
+  // Get the current client name for display when targetClientId is provided
+  const getCurrentClientName = () => {
+    if (!targetClientId || !relationships || relationships.length === 0) return null;
+    return relationships[0]?.label;
+  };
+
   if (isLoading) {
     return <div className="text-center py-8">Loading documents...</div>;
   }
@@ -300,7 +325,8 @@ export const DocumentsManagement = ({ userType, userId }: DocumentsManagementPro
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">Document Management</h2>
         <div className="flex items-center space-x-4">
-          {relationships && relationships.length > 1 && (
+          {/* Only show relationship selector if no targetClientId and multiple relationships */}
+          {!targetClientId && relationships && relationships.length > 1 && (
             <div className="flex items-center space-x-2">
               <Users className="h-4 w-4 text-gray-600" />
               <Select value={selectedRelationship} onValueChange={setSelectedRelationship}>
@@ -369,11 +395,21 @@ export const DocumentsManagement = ({ userType, userId }: DocumentsManagementPro
         </div>
       </div>
 
-      {selectedRelationship !== 'all' && relationships && (
+      {/* Show current client context when filtering by targetClientId */}
+      {targetClientId && getCurrentClientName() && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <p className="text-sm text-blue-800">
+            Viewing documents for: <strong>{getCurrentClientName()}</strong>
+          </p>
+        </div>
+      )}
+
+      {/* Show relationship filter context when not using targetClientId */}
+      {!targetClientId && effectiveSelectedRelationship !== 'all' && relationships && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
           <p className="text-sm text-blue-800">
             Showing documents for: <strong>
-              {relationships.find(r => r.id === selectedRelationship)?.label}
+              {relationships.find(r => r.id === effectiveSelectedRelationship)?.label}
             </strong>
           </p>
         </div>
@@ -419,7 +455,7 @@ export const DocumentsManagement = ({ userType, userId }: DocumentsManagementPro
                     By: {document.uploaded_by === user?.id ? 'You' : 
                          (userType === 'provider' ? 'Client' : 'Provider')}
                   </p>
-                  {selectedRelationship === 'all' && relationships && relationships.length > 1 && (
+                  {!targetClientId && effectiveSelectedRelationship === 'all' && relationships && relationships.length > 1 && (
                     <p className="text-blue-600 font-medium">
                       {getRelationshipContext(document)}
                     </p>
