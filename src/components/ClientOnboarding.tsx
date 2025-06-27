@@ -1,297 +1,338 @@
-
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
-import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
 import { toast } from '@/hooks/use-toast';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import { useNavigate } from 'react-router-dom';
+import { Lock, Crown } from 'lucide-react';
 
 interface ClientOnboardingProps {
   providerSlug: string;
 }
 
+interface ClientForm {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  address: string;
+  cityId: string;
+  countryId: string;
+  notes: string;
+}
+
 export const ClientOnboarding = ({ providerSlug }: ClientOnboardingProps) => {
   const { user } = useAuth();
-  const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({
+  const navigate = useNavigate();
+  const [form, setForm] = useState<ClientForm>({
     firstName: '',
     lastName: '',
-    email: user?.email || '',
+    email: '',
     phone: '',
     address: '',
     cityId: '',
     countryId: '',
+    notes: '',
   });
 
-  // Fetch existing client data for this user
-  const { data: existingClient } = useQuery({
-    queryKey: ['existing-client-data', user?.id],
+  // Fetch provider based on slug
+  const { data: provider, isLoading: loadingProvider } = useQuery({
+    queryKey: ['provider', providerSlug],
     queryFn: async () => {
-      if (!user?.id) return null;
-      const { data } = await supabase
-        .from('clients')
-        .select('*')
-        .eq('user_id', user.id)
-        .maybeSingle();
-      return data;
-    },
-    enabled: !!user?.id,
-  });
-
-  // Pre-populate form with existing client data
-  useEffect(() => {
-    if (existingClient) {
-      setFormData({
-        firstName: existingClient.first_name || '',
-        lastName: existingClient.last_name || '',
-        email: existingClient.email || user?.email || '',
-        phone: existingClient.phone || '',
-        address: existingClient.address || '',
-        cityId: existingClient.city_id || '',
-        countryId: existingClient.country_id || '',
-      });
-    }
-  }, [existingClient, user?.email]);
-
-  // Fetch provider info
-  const { data: provider } = useQuery({
-    queryKey: ['provider-by-slug', providerSlug],
-    queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('providers')
-        .select('*, expertise_areas(name)')
+        .select('*')
         .eq('provider_slug', providerSlug)
         .single();
-      return data;
-    },
-  });
 
-  // Check if user already has a client record with this provider
-  const { data: existingClientRecord } = useQuery({
-    queryKey: ['existing-client-record', user?.id, provider?.id],
-    queryFn: async () => {
-      if (!user?.id || !provider?.id) return null;
-      const { data } = await supabase
-        .from('clients')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('provider_id', provider.id)
-        .maybeSingle();
+      if (error) {
+        console.error('Error fetching provider:', error);
+        return null;
+      }
+
       return data;
     },
-    enabled: !!user?.id && !!provider?.id,
   });
 
   // Fetch countries
   const { data: countries } = useQuery({
     queryKey: ['countries'],
     queryFn: async () => {
-      const { data } = await supabase.from('countries').select('*').order('name');
+      const { data, error } = await supabase
+        .from('countries')
+        .select('*')
+        .order('name', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching countries:', error);
+        return [];
+      }
+
       return data || [];
     },
   });
 
   // Fetch cities based on selected country
-  const { data: cities } = useQuery({
-    queryKey: ['cities', formData.countryId],
+  const { data: cities, refetch: refetchCities } = useQuery({
+    queryKey: ['cities', form.countryId],
     queryFn: async () => {
-      if (!formData.countryId) return [];
-      const { data } = await supabase
+      if (!form.countryId) return [];
+
+      const { data, error } = await supabase
         .from('cities')
         .select('*')
-        .eq('country_id', formData.countryId)
-        .order('name');
+        .eq('country_id', form.countryId)
+        .order('name', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching cities:', error);
+        return [];
+      }
+
       return data || [];
     },
-    enabled: !!formData.countryId,
+    enabled: !!form.countryId,
+  });
+
+  useEffect(() => {
+    if (form.countryId) {
+      refetchCities();
+    }
+  }, [form.countryId, refetchCities]);
+
+  // Create client mutation
+  const createClientMutation = useMutation({
+    mutationFn: async (clientData: ClientForm) => {
+      if (!user || !provider) throw new Error('User or provider not found');
+
+      const { data, error } = await supabase
+        .from('clients')
+        .insert([
+          {
+            ...clientData,
+            provider_id: provider.id,
+            user_id: user.id,
+          },
+        ])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error creating client:', error);
+        throw error;
+      }
+
+      return data;
+    },
+    onSuccess: () => {
+      toast({
+        title: "Client created successfully",
+        description: "You're now connected to the provider",
+      });
+      navigate('/dashboard');
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error creating client",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Check if provider can accept new clients
+  const { data: canAcceptNewClients, isLoading: checkingLimits } = useQuery({
+    queryKey: ['provider-client-limit', provider?.id],
+    queryFn: async () => {
+      if (!provider?.id) return true;
+      
+      const { data } = await supabase
+        .rpc('check_provider_client_limit', { provider_id: provider.id });
+      
+      return data;
+    },
+    enabled: !!provider?.id,
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-
-    try {
-      if (!provider) throw new Error('Provider not found');
-      if (!user?.id) throw new Error('User not authenticated');
-
-      console.log('Connecting to provider with ID:', provider.id);
-
-      if (existingClient) {
-        // Update existing client record with new provider connection
-        console.log('Updating existing client record with provider_id:', provider.id);
-        
-        const { error } = await supabase
-          .from('clients')
-          .update({
-            provider_id: provider.id,
-            email: formData.email,
-            first_name: formData.firstName,
-            last_name: formData.lastName,
-            phone: formData.phone || null,
-            address: formData.address || null,
-            city_id: formData.cityId || null,
-            country_id: formData.countryId || null,
-          })
-          .eq('id', existingClient.id);
-
-        if (error) {
-          console.error('Database error:', error);
-          throw error;
-        }
-      } else {
-        // Create new client record if none exists
-        console.log('Creating new client record with provider_id:', provider.id);
-        
-        const { error } = await supabase.from('clients').insert({
-          user_id: user.id,
-          provider_id: provider.id,
-          email: formData.email,
-          first_name: formData.firstName,
-          last_name: formData.lastName,
-          phone: formData.phone || null,
-          address: formData.address || null,
-          city_id: formData.cityId || null,
-          country_id: formData.countryId || null,
-        });
-
-        if (error) {
-          console.error('Database error:', error);
-          throw error;
-        }
-      }
-
-      console.log('Client connection successful');
-
-      toast({
-        title: "Connection successful!",
-        description: `You're now connected with ${provider.first_name} ${provider.last_name}`,
-      });
-
-      // Refresh the page to load the client dashboard
-      window.location.reload();
-    } catch (error: any) {
-      console.error('Error creating connection:', error);
-      toast({
-        title: "Error creating connection",
-        description: error.message,
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
+    createClientMutation.mutate(form);
   };
 
-  // If user is already connected to this provider, redirect them
-  if (existingClientRecord) {
-    toast({
-      title: "Already connected",
-      description: `You're already connected with ${provider?.first_name} ${provider?.last_name}`,
-    });
-    window.location.href = '/dashboard';
-    return null;
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setForm({ ...form, [name]: value });
+  };
+
+  if (loadingProvider || checkingLimits) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+      </div>
+    );
   }
 
   if (!provider) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <Card className="w-full max-w-md">
-          <CardContent className="pt-6">
-            <p className="text-center text-red-600">Provider not found</p>
-          </CardContent>
-        </Card>
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">Provider Not Found</h1>
+          <p className="text-gray-600">The provider link you're trying to access doesn't exist.</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4">
-      <Card className="w-full max-w-2xl">
-        <CardHeader>
-          <CardTitle>Connect with {provider.first_name} {provider.last_name}</CardTitle>
+    <div className="min-h-screen bg-gray-50 py-12">
+      <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="text-center">
+          <Avatar className="w-24 h-24 mx-auto mb-4">
+            <AvatarImage src={provider.profile_image_url} alt={provider.first_name} />
+            <AvatarFallback>{provider.first_name[0]}{provider.last_name[0]}</AvatarFallback>
+          </Avatar>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">
+            Connect with {provider.company_name || `${provider.first_name} ${provider.last_name}`}
+          </h1>
           <p className="text-gray-600">
-            {provider.company_name && `${provider.company_name} - `}
-            {provider.expertise_areas?.name}
+            Fill out the form below to connect with this provider.
           </p>
-          {existingClient && (
-            <p className="text-sm text-blue-600 bg-blue-50 p-2 rounded">
-              We've pre-filled your information. You can update any details before connecting.
-            </p>
-          )}
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Input
-                placeholder="First Name"
-                value={formData.firstName}
-                onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
-                required
-              />
-              <Input
-                placeholder="Last Name"
-                value={formData.lastName}
-                onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
-                required
-              />
-            </div>
+          <Badge className="mt-4">
+            You're connecting through: {providerSlug}
+          </Badge>
+        </div>
 
-            <Input
-              type="email"
-              placeholder="Email"
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              required
-            />
+        {!canAcceptNewClients ? (
+          <Card className="border-amber-200 bg-amber-50">
+            <CardContent className="p-8 text-center">
+              <div className="flex items-center justify-center space-x-2 text-amber-600 mb-4">
+                <Lock className="h-8 w-8" />
+                <Crown className="h-8 w-8" />
+              </div>
+              <h3 className="text-xl font-semibold text-gray-900 mb-4">Provider Capacity Reached</h3>
+              <p className="text-gray-600 mb-6">
+                This provider has reached their current client limit. You can still register, but some features may be limited until they upgrade their plan.
+              </p>
+              <p className="text-sm text-gray-500">
+                Don't worry - you'll have full access once the provider upgrades their subscription.
+              </p>
+            </CardContent>
+          </Card>
+        ) : null}
 
-            <Input
-              placeholder="Phone (Optional)"
-              value={formData.phone}
-              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-            />
-
-            <Input
-              placeholder="Address (Optional)"
-              value={formData.address}
-              onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-            />
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Select value={formData.countryId} onValueChange={(value) => setFormData({ ...formData, countryId: value, cityId: '' })}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Country" />
-                </SelectTrigger>
-                <SelectContent>
-                  {countries?.map((country) => (
-                    <SelectItem key={country.id} value={country.id}>
-                      {country.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <Select value={formData.cityId} onValueChange={(value) => setFormData({ ...formData, cityId: value })}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select City" />
-                </SelectTrigger>
-                <SelectContent>
-                  {cities?.map((city) => (
-                    <SelectItem key={city.id} value={city.id}>
-                      {city.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? 'Connecting...' : `Connect with ${provider.first_name} ${provider.last_name}`}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>Client Information</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label htmlFor="firstName">First Name</label>
+                <Input
+                  type="text"
+                  id="firstName"
+                  name="firstName"
+                  value={form.firstName}
+                  onChange={handleChange}
+                  required
+                />
+              </div>
+              <div>
+                <label htmlFor="lastName">Last Name</label>
+                <Input
+                  type="text"
+                  id="lastName"
+                  name="lastName"
+                  value={form.lastName}
+                  onChange={handleChange}
+                  required
+                />
+              </div>
+              <div>
+                <label htmlFor="email">Email</label>
+                <Input
+                  type="email"
+                  id="email"
+                  name="email"
+                  value={form.email}
+                  onChange={handleChange}
+                  required
+                />
+              </div>
+              <div>
+                <label htmlFor="phone">Phone</label>
+                <Input
+                  type="tel"
+                  id="phone"
+                  name="phone"
+                  value={form.phone}
+                  onChange={handleChange}
+                />
+              </div>
+              <div>
+                <label htmlFor="address">Address</label>
+                <Input
+                  type="text"
+                  id="address"
+                  name="address"
+                  value={form.address}
+                  onChange={handleChange}
+                />
+              </div>
+              <div>
+                <label htmlFor="countryId">Country</label>
+                <Select value={form.countryId} onValueChange={(value) => setForm({ ...form, countryId: value, cityId: '' })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a country" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {countries?.map((country) => (
+                      <SelectItem key={country.id} value={country.id}>
+                        {country.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label htmlFor="cityId">City</label>
+                <Select value={form.cityId} onValueChange={(value) => setForm({ ...form, cityId: value })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a city" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {cities?.map((city) => (
+                      <SelectItem key={city.id} value={city.id}>
+                        {city.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label htmlFor="notes">Notes</label>
+                <Textarea
+                  id="notes"
+                  name="notes"
+                  value={form.notes}
+                  onChange={handleChange}
+                  placeholder="Any additional notes..."
+                />
+              </div>
+              <Button type="submit" disabled={createClientMutation.isPending}>
+                {createClientMutation.isPending ? 'Submitting...' : 'Connect'}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 };

@@ -21,6 +21,7 @@ export type Database = {
           location: string | null
           notes: string | null
           provider_id: string | null
+          room_id: string | null
           start_time: string
           status: Database["public"]["Enums"]["appointment_status"] | null
           title: string
@@ -38,6 +39,7 @@ export type Database = {
           location?: string | null
           notes?: string | null
           provider_id?: string | null
+          room_id?: string | null
           start_time: string
           status?: Database["public"]["Enums"]["appointment_status"] | null
           title: string
@@ -55,6 +57,7 @@ export type Database = {
           location?: string | null
           notes?: string | null
           provider_id?: string | null
+          room_id?: string | null
           start_time?: string
           status?: Database["public"]["Enums"]["appointment_status"] | null
           title?: string
@@ -627,8 +630,16 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_provider_interact_with_client: {
+        Args: { provider_id: string; client_id: string }
+        Returns: boolean
+      }
       check_client_limit: {
         Args: { provider_user_id: string }
+        Returns: boolean
+      }
+      check_provider_client_limit: {
+        Args: { provider_id: string }
         Returns: boolean
       }
       generate_provider_slug: {

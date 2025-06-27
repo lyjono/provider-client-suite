@@ -1,206 +1,138 @@
-
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { MessageCircle, Send } from 'lucide-react';
+import { Send, Paperclip, Download, FileText } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
-import { useAuth } from '@/hooks/useAuth';
+import { BlurredContent } from '@/components/BlurredContent';
+import { useProviderClientInteraction } from '@/hooks/useSubscriptionLimits';
 
 interface ChatInterfaceProps {
-  userType: 'provider' | 'client';
-  userId: string; // This is the provider/client record ID, not the auth user ID
+  conversationId: string;
+  currentUserId: string;
+  otherParticipant: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    profileImageUrl: string | null;
+    userType: 'client' | 'provider';
+  };
 }
 
 interface Message {
   id: string;
-  conversation_id: string;
-  sender_id: string;
   content: string;
+  sender_id: string;
   created_at: string;
-  is_read: boolean;
-  message_type: string;
-  file_url?: string;
-  file_name?: string;
-  file_size?: number;
+  file_url: string | null;
+  file_name: string | null;
+  file_size: number | null;
 }
 
-interface Conversation {
-  id: string;
-  provider_id: string;
-  client_id: string;
-  last_message_at: string;
-  providers?: {
-    first_name: string;
-    last_name: string;
-    company_name?: string;
-    profile_image_url?: string;
-  };
-  clients?: {
-    first_name: string;
-    last_name: string;
-  };
-}
-
-export const ChatInterface = ({ userType, userId }: ChatInterfaceProps) => {
-  const [newMessage, setNewMessage] = useState('');
-  const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
+export const ChatInterface = ({ conversationId, currentUserId, otherParticipant }: ChatInterfaceProps) => {
+  const [messageText, setMessageText] = useState('');
+  const [file, setFile] = useState<File | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
-  const { user } = useAuth();
 
-  console.log('ChatInterface - userType:', userType, 'userId:', userId, 'authUser:', user?.id);
-
-  // Create or find conversation
-  const createOrFindConversation = async (clientId: string, providerId: string) => {
-    console.log('Creating/finding conversation for client:', clientId, 'provider:', providerId);
-    
-    // First check if conversation already exists
-    const { data: existingConversation, error: fetchError } = await supabase
-      .from('conversations')
-      .select('*')
-      .eq('client_id', clientId)
-      .eq('provider_id', providerId)
-      .maybeSingle();
-
-    if (fetchError) {
-      console.error('Error fetching conversation:', fetchError);
-      throw fetchError;
-    }
-
-    if (existingConversation) {
-      console.log('Found existing conversation:', existingConversation);
-      return existingConversation;
-    }
-
-    // Create new conversation
-    const { data: newConversation, error } = await supabase
-      .from('conversations')
-      .insert({
-        client_id: clientId,
-        provider_id: providerId,
-        last_message_at: new Date().toISOString(),
-      })
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Error creating conversation:', error);
-      throw error;
-    }
-
-    console.log('Created new conversation:', newConversation);
-    return newConversation;
-  };
-
-  // Fetch conversations based on user type
-  const { data: conversations, isLoading: conversationsLoading } = useQuery({
-    queryKey: ['conversations', userId, userType],
+  const { data: messages, isLoading: loading } = useQuery({
+    queryKey: ['messages', conversationId],
     queryFn: async () => {
-      console.log('Fetching conversations for:', userType, userId);
-      
-      if (userType === 'provider') {
-        // For providers, get all conversations where they are the provider
-        const { data } = await supabase
-          .from('conversations')
-          .select(`
-            *,
-            clients(first_name, last_name)
-          `)
-          .eq('provider_id', userId)
-          .order('last_message_at', { ascending: false });
-        
-        console.log('Provider conversations:', data);
-        return data as Conversation[] || [];
-      } else {
-        // For clients, we need to get the client record first, then find conversations
-        const { data: clientRecord } = await supabase
-          .from('clients')
-          .select('*')
-          .eq('id', userId)
-          .single();
-
-        if (!clientRecord || !clientRecord.provider_id) {
-          console.log('No client record or provider found for client:', userId);
-          return [];
-        }
-
-        // Check if conversation exists, if not create it
-        try {
-          const conversation = await createOrFindConversation(userId, clientRecord.provider_id);
-          
-          // Now fetch the conversation with provider details
-          const { data } = await supabase
-            .from('conversations')
-            .select(`
-              *,
-              providers(first_name, last_name, company_name, profile_image_url)
-            `)
-            .eq('id', conversation.id);
-          
-          console.log('Client conversations:', data);
-          return data as Conversation[] || [];
-        } catch (error) {
-          console.error('Error creating/finding conversation:', error);
-          return [];
-        }
-      }
-    },
-    enabled: !!user, // Only run when user is authenticated
-  });
-
-  // Fetch messages for selected conversation
-  const { data: messages, isLoading: messagesLoading } = useQuery({
-    queryKey: ['messages', selectedConversation],
-    queryFn: async () => {
-      if (!selectedConversation) return [];
       const { data } = await supabase
         .from('messages')
         .select('*')
-        .eq('conversation_id', selectedConversation)
+        .eq('conversation_id', conversationId)
         .order('created_at', { ascending: true });
-      return data as Message[] || [];
+      return data || [];
     },
-    enabled: !!selectedConversation && !!user,
   });
+  
+  const { canInteract } = useProviderClientInteraction(
+    otherParticipant?.userType === 'client' ? otherParticipant.id : undefined
+  );
 
-  // Send message mutation
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [messages]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('public:messages')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` },
+        (payload) => {
+          console.log('Change received!', payload)
+          queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [conversationId, queryClient])
+
   const sendMessageMutation = useMutation({
-    mutationFn: async (messageText: string) => {
-      if (!selectedConversation || !messageText.trim() || !user) {
-        throw new Error('Missing required data for sending message');
+    mutationFn: async () => {
+      if (!messageText.trim() && !file) return;
+
+      let file_url = null;
+      let file_name = null;
+      let file_size = null;
+
+      if (file) {
+        const timestamp = Date.now();
+        const filePath = `chat-files/${conversationId}/${timestamp}_${file.name}`;
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('chat-files')
+          .upload(filePath, file);
+
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('chat-files')
+          .getPublicUrl(filePath);
+
+        file_url = publicUrl;
+        file_name = file.name;
+        file_size = file.size;
       }
 
-      console.log('Sending message with auth user ID:', user.id);
+      const { data, error } = await supabase
+        .from('messages')
+        .insert([
+          {
+            content: messageText,
+            conversation_id: conversationId,
+            sender_id: currentUserId,
+            file_url: file_url,
+            file_name: file_name,
+            file_size: file_size,
+          },
+        ])
+        .select()
+        .single();
 
-      const { error } = await supabase.from('messages').insert({
-        conversation_id: selectedConversation,
-        sender_id: user.id, // Use the authenticated user's ID from Supabase auth
-        content: messageText.trim(),
-        message_type: 'text',
-      });
-
-      if (error) {
-        console.error('Error inserting message:', error);
-        throw error;
-      }
-
-      // Update conversation's last_message_at
-      await supabase
-        .from('conversations')
-        .update({ last_message_at: new Date().toISOString() })
-        .eq('id', selectedConversation);
+      if (error) throw error;
+      return data;
     },
     onSuccess: () => {
-      setNewMessage('');
-      queryClient.invalidateQueries({ queryKey: ['messages', selectedConversation] });
-      queryClient.invalidateQueries({ queryKey: ['conversations', userId, userType] });
+      setMessageText('');
+      setFile(null);
+      queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
+      scrollToBottom();
     },
     onError: (error) => {
-      console.error('Error sending message:', error);
+      console.error('Send message error:', error);
       toast({
         title: "Error sending message",
         description: "Please try again",
@@ -209,199 +141,119 @@ export const ChatInterface = ({ userType, userId }: ChatInterfaceProps) => {
     },
   });
 
-  // Auto-scroll to bottom when new messages arrive
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  const handleSendMessage = async () => {
+    await sendMessageMutation.mutateAsync();
+  };
 
-  // Select first conversation by default
-  useEffect(() => {
-    if (conversations && conversations.length > 0 && !selectedConversation) {
-      setSelectedConversation(conversations[0].id);
-    }
-  }, [conversations, selectedConversation]);
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0] || null;
+    setFile(selectedFile);
+  };
 
-  const handleSendMessage = () => {
-    if (newMessage.trim()) {
-      sendMessageMutation.mutate(newMessage);
+  const handleDownload = (message: Message) => {
+    if (message.file_url) {
+      window.open(message.file_url, '_blank');
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSendMessage();
-    }
-  };
-
-  const getConversationPartner = (conversation: Conversation) => {
-    if (userType === 'provider') {
-      return {
-        name: `${conversation.clients?.first_name} ${conversation.clients?.last_name}`,
-        avatar: null,
-        initials: `${conversation.clients?.first_name?.[0]}${conversation.clients?.last_name?.[0]}`.toUpperCase(),
-      };
-    } else {
-      return {
-        name: conversation.providers?.company_name || 
-              `${conversation.providers?.first_name} ${conversation.providers?.last_name}`,
-        avatar: conversation.providers?.profile_image_url,
-        initials: `${conversation.providers?.first_name?.[0]}${conversation.providers?.last_name?.[0]}`.toUpperCase(),
-      };
-    }
-  };
-
-  const formatMessageTime = (timestamp: string) => {
-    return new Date(timestamp).toLocaleTimeString([], { 
-      hour: '2-digit', 
-      minute: '2-digit' 
-    });
-  };
-
-  const isMyMessage = (message: Message) => {
-    return message.sender_id === user?.id; // Compare with auth user ID
-  };
-
-  if (!user) {
-    return <div className="text-center py-8">Please log in to access messages.</div>;
-  }
-
-  if (conversationsLoading) {
-    return <div className="text-center py-8">Loading conversations...</div>;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+      </div>
+    );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">Messages</h2>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[600px]">
-        {/* Conversations List */}
-        <Card className="lg:col-span-1">
-          <CardHeader>
-            <CardTitle>Conversations</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            {conversations?.length === 0 ? (
-              <p className="text-gray-600 p-4">No conversations yet</p>
-            ) : (
-              <div className="space-y-1">
-                {conversations?.map((conversation) => {
-                  const partner = getConversationPartner(conversation);
-                  return (
-                    <div
-                      key={conversation.id}
-                      onClick={() => setSelectedConversation(conversation.id)}
-                      className={`flex items-center space-x-3 p-4 hover:bg-gray-50 cursor-pointer border-b ${
-                        selectedConversation === conversation.id ? 'bg-blue-50 border-blue-200' : ''
-                      }`}
-                    >
-                      <Avatar className="h-10 w-10">
-                        <AvatarImage src={partner.avatar} />
-                        <AvatarFallback className="bg-blue-600 text-white text-sm">
-                          {partner.initials}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm truncate">{partner.name}</p>
-                        <p className="text-xs text-gray-500">
-                          {new Date(conversation.last_message_at).toLocaleDateString()}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Chat Area */}
-        <Card className="lg:col-span-2 flex flex-col">
-          <CardHeader className="border-b">
-            <CardTitle className="flex items-center space-x-2">
-              <MessageCircle className="h-5 w-5 text-blue-600" />
-              <span>
-                {selectedConversation && conversations ? 
-                  getConversationPartner(conversations.find(c => c.id === selectedConversation)!).name : 
-                  'Select a conversation'
-                }
-              </span>
-            </CardTitle>
-          </CardHeader>
-          
-          <CardContent className="flex-1 flex flex-col p-0">
-            {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {!selectedConversation ? (
-                <div className="text-center text-gray-600 mt-20">
-                  <MessageCircle className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                  <p>Select a conversation to start messaging</p>
-                </div>
-              ) : messagesLoading ? (
-                <div className="text-center py-8">Loading messages...</div>
-              ) : messages?.length === 0 ? (
-                <div className="text-center text-gray-600 mt-20">
-                  <p>No messages yet. Start the conversation!</p>
-                </div>
-              ) : (
-                <>
-                  {messages?.map((message) => (
-                    <div
-                      key={message.id}
-                      className={`flex ${
-                        isMyMessage(message) ? 'justify-end' : 'justify-start'
-                      }`}
-                    >
-                      <div
-                        className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                          isMyMessage(message)
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-gray-100 text-gray-900'
-                        }`}
-                      >
-                        <p className="text-sm">{message.content}</p>
-                        <p
-                          className={`text-xs mt-1 ${
-                            isMyMessage(message)
-                              ? 'text-blue-100'
-                              : 'text-gray-500'
-                          }`}
-                        >
-                          {formatMessageTime(message.created_at)}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                  <div ref={messagesEndRef} />
-                </>
-              )}
+    <BlurredContent
+      isBlurred={!canInteract && otherParticipant?.userType === 'client'}
+      title="Client Limit Reached"
+      description="You've reached your subscription limit. Upgrade to interact with more clients."
+    >
+      <div className="flex flex-col h-full">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4 pl-4 pr-4">
+          <CardTitle className="text-lg font-medium">
+            <div className="flex items-center">
+              <Avatar className="mr-2 h-8 w-8">
+                <AvatarImage src={otherParticipant?.profileImageUrl || ''} />
+                <AvatarFallback>{otherParticipant?.firstName[0]}{otherParticipant?.lastName[0]}</AvatarFallback>
+              </Avatar>
+              {otherParticipant?.firstName} {otherParticipant?.lastName}
             </div>
-
-            {/* Message Input */}
-            {selectedConversation && (
-              <div className="border-t p-4">
-                <div className="flex space-x-2">
-                  <Input
-                    placeholder="Type your message..."
-                    value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
-                    onKeyPress={handleKeyPress}
-                    disabled={sendMessageMutation.isPending}
-                  />
-                  <Button 
-                    onClick={handleSendMessage}
-                    disabled={!newMessage.trim() || sendMessageMutation.isPending}
-                  >
-                    <Send className="h-4 w-4" />
-                  </Button>
+          </CardTitle>
+        </CardHeader>
+        
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {messages.map((message) => (
+            <div
+              key={message.id}
+              className={`flex ${message.sender_id === currentUserId ? 'justify-end' : 'justify-start'}`}
+            >
+              <div
+                className={`rounded-lg px-3 py-2 shadow ${message.sender_id === currentUserId ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-900'
+                  }`}
+                style={{ maxWidth: '75%' }}
+              >
+                {message.file_url && (
+                  <div className="mb-2">
+                    <div className="flex items-center space-x-2">
+                      <FileText className="h-4 w-4" />
+                      <a
+                        href={message.file_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm underline"
+                      >
+                        {message.file_name}
+                      </a>
+                      <Button variant="ghost" size="icon" onClick={() => handleDownload(message)}>
+                        <Download className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                <p className="text-sm break-words">{message.content}</p>
+                <div className="text-xs text-gray-400 mt-1">
+                  {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </div>
               </div>
-            )}
-          </CardContent>
-        </Card>
+            </div>
+          ))}
+          <div ref={messagesEndRef} />
+        </div>
+
+        <div className={`border-t p-4 ${!canInteract && otherParticipant?.userType === 'client' ? 'opacity-50 pointer-events-none' : ''}`}>
+          <div className="flex items-center space-x-2">
+            <Input
+              type="text"
+              placeholder="Type your message..."
+              value={messageText}
+              onChange={(e) => setMessageText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleSendMessage();
+                }
+              }}
+            />
+            <label htmlFor="upload-file">
+              <Button variant="secondary" size="icon">
+                <Paperclip className="h-4 w-4" />
+              </Button>
+            </label>
+            <input
+              type="file"
+              id="upload-file"
+              className="hidden"
+              onChange={handleFileChange}
+              accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.gif"
+            />
+            <Button onClick={handleSendMessage} disabled={sendMessageMutation.isPending}>
+              <Send className="h-4 w-4 mr-2" />
+              Send
+            </Button>
+          </div>
+        </div>
       </div>
-    </div>
+    </BlurredContent>
   );
 };

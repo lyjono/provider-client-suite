@@ -1,14 +1,16 @@
-
 import { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Users, Settings, LogOut, Link, User, MessageCircle, Calendar, FileText } from 'lucide-react';
+import { Users, Settings, LogOut, Link, User, MessageCircle, Calendar, FileText, Crown } from 'lucide-react';
 import { ClientsManagement } from '@/components/ClientsManagement';
 import { ProviderSettings } from '@/components/ProviderSettings';
 import { ProviderClientDetails } from '@/components/ProviderClientDetails';
+import { SubscriptionUpgrade } from '@/components/SubscriptionUpgrade';
+import { BlurredContent } from '@/components/BlurredContent';
+import { useProviderClientInteraction } from '@/hooks/useSubscriptionLimits';
 import { toast } from '@/hooks/use-toast';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -19,7 +21,7 @@ interface ProviderDashboardProps {
 
 export const ProviderDashboard = ({ provider }: ProviderDashboardProps) => {
   const { signOut } = useAuth();
-  const [currentView, setCurrentView] = useState<'clients' | 'settings'>('clients');
+  const [currentView, setCurrentView] = useState<'clients' | 'settings' | 'subscription'>('clients');
   const [selectedClient, setSelectedClient] = useState<any>(null);
 
   // Fetch clients
@@ -67,6 +69,14 @@ export const ProviderDashboard = ({ provider }: ProviderDashboardProps) => {
     }
   };
 
+  const handleUpgrade = (tier: 'starter' | 'pro') => {
+    // This would integrate with your payment system (Stripe, etc.)
+    toast({
+      title: "Upgrade Plan",
+      description: `Upgrading to ${tier} plan - this would integrate with your payment system`,
+    });
+  };
+
   if (selectedClient) {
     return (
       <ProviderClientDetails 
@@ -111,6 +121,14 @@ export const ProviderDashboard = ({ provider }: ProviderDashboardProps) => {
                 Clients
               </Button>
               <Button 
+                variant={currentView === 'subscription' ? 'default' : 'outline'} 
+                onClick={() => setCurrentView('subscription')}
+                className={provider.subscription_tier === 'free' ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white' : ''}
+              >
+                <Crown className="h-4 w-4 mr-2" />
+                {provider.subscription_tier === 'free' ? 'Upgrade' : 'Subscription'}
+              </Button>
+              <Button 
                 variant={currentView === 'settings' ? 'default' : 'outline'} 
                 onClick={() => setCurrentView('settings')}
               >
@@ -130,6 +148,11 @@ export const ProviderDashboard = ({ provider }: ProviderDashboardProps) => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {currentView === 'settings' ? (
           <ProviderSettings provider={provider} />
+        ) : currentView === 'subscription' ? (
+          <SubscriptionUpgrade 
+            currentTier={provider.subscription_tier || 'free'} 
+            onUpgrade={handleUpgrade}
+          />
         ) : (
           <div className="space-y-6">
             <div className="flex justify-between items-center">
@@ -159,55 +182,14 @@ export const ProviderDashboard = ({ provider }: ProviderDashboardProps) => {
                   const initials = `${client.first_name[0]}${client.last_name[0]}`.toUpperCase();
                   
                   return (
-                    <Card key={client.id} className="hover:shadow-md transition-shadow cursor-pointer">
-                      <CardHeader className="pb-3">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-3">
-                            <Avatar className="h-10 w-10">
-                              <AvatarImage src={client.profile_image_url} />
-                              <AvatarFallback className="bg-blue-600 text-white text-sm">
-                                {initials}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div>
-                              <CardTitle className="text-lg">
-                                {client.first_name} {client.last_name}
-                              </CardTitle>
-                              <p className="text-sm text-gray-600">{client.email}</p>
-                            </div>
-                          </div>
-                          <Badge className={getStatusColor(client.lead_status)}>
-                            {client.lead_status}
-                          </Badge>
-                        </div>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
-                        {client.phone && (
-                          <p className="text-sm text-gray-600">{client.phone}</p>
-                        )}
-                        {client.cities?.name && (
-                          <p className="text-sm text-gray-600">
-                            {client.cities.name}, {client.countries?.name}
-                          </p>
-                        )}
-                        {client.notes && (
-                          <p className="text-sm text-gray-700 bg-gray-50 p-2 rounded">
-                            {client.notes.substring(0, 80)}
-                            {client.notes.length > 80 && '...'}
-                          </p>
-                        )}
-                        <div className="flex space-x-2 pt-2">
-                          <Button 
-                            size="sm" 
-                            onClick={() => setSelectedClient(client)}
-                            className="flex-1"
-                          >
-                            <MessageCircle className="h-4 w-4 mr-1" />
-                            View Details
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
+                    <ClientCard 
+                      key={client.id}
+                      client={client}
+                      initials={initials}
+                      provider={provider}
+                      onSelectClient={setSelectedClient}
+                      getStatusColor={getStatusColor}
+                    />
                   );
                 })}
               </div>
@@ -216,5 +198,68 @@ export const ProviderDashboard = ({ provider }: ProviderDashboardProps) => {
         )}
       </div>
     </div>
+  );
+};
+
+const ClientCard = ({ client, initials, provider, onSelectClient, getStatusColor }: any) => {
+  const { canInteract } = useProviderClientInteraction(client.id);
+
+  return (
+    <BlurredContent
+      isBlurred={!canInteract}
+      title="Client Limit Reached"
+      description="You've reached your subscription limit. Upgrade to interact with more clients."
+    >
+      <Card className="hover:shadow-md transition-shadow cursor-pointer">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <Avatar className="h-10 w-10">
+                <AvatarImage src={client.profile_image_url} />
+                <AvatarFallback className="bg-blue-600 text-white text-sm">
+                  {initials}
+                </AvatarFallback>
+              </Avatar>
+              <div>
+                <CardTitle className="text-lg">
+                  {client.first_name} {client.last_name}
+                </CardTitle>
+                <p className="text-sm text-gray-600">{client.email}</p>
+              </div>
+            </div>
+            <Badge className={getStatusColor(client.lead_status)}>
+              {client.lead_status}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {client.phone && (
+            <p className="text-sm text-gray-600">{client.phone}</p>
+          )}
+          {client.cities?.name && (
+            <p className="text-sm text-gray-600">
+              {client.cities.name}, {client.countries?.name}
+            </p>
+          )}
+          {client.notes && (
+            <p className="text-sm text-gray-700 bg-gray-50 p-2 rounded">
+              {client.notes.substring(0, 80)}
+              {client.notes.length > 80 && '...'}
+            </p>
+          )}
+          <div className={`flex space-x-2 pt-2 ${!canInteract ? 'opacity-50 pointer-events-none' : ''}`}>
+            <Button 
+              size="sm" 
+              onClick={() => onSelectClient(client)}
+              className="flex-1"
+              disabled={!canInteract}
+            >
+              <MessageCircle className="h-4 w-4 mr-1" />
+              View Details
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </BlurredContent>
   );
 };

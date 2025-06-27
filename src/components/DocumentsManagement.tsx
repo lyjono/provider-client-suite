@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -11,6 +10,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FileText, Upload, Download, Trash2, Eye, Users } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { BlurredContent } from '@/components/BlurredContent';
+import { useProviderClientInteraction } from '@/hooks/useSubscriptionLimits';
 
 interface DocumentsManagementProps {
   userType: 'provider' | 'client';
@@ -110,6 +111,8 @@ export const DocumentsManagement = ({ userType, userId, targetClientId }: Docume
     },
     enabled: !!relationships && relationships.length > 0,
   });
+
+  const { canInteract } = useProviderClientInteraction(targetClientId);
 
   // Fetch shared documents with relationship filtering
   const { data: documents, isLoading } = useQuery({
@@ -435,66 +438,89 @@ export const DocumentsManagement = ({ userType, userId, targetClientId }: Docume
           </Card>
         ) : (
           documents?.map((document) => (
-            <Card key={document.id} className="hover:shadow-md transition-shadow">
-              <CardHeader className="pb-3">
-                <div className="flex items-center space-x-2">
-                  <FileText className="h-5 w-5 text-blue-600" />
-                  <CardTitle className="text-lg truncate" title={document.file_name}>
-                    {document.file_name}
-                  </CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {document.description && (
-                  <p className="text-sm text-gray-600">{document.description}</p>
-                )}
-                <div className="text-xs text-gray-500 space-y-1">
-                  <p>Size: {formatFileSize(document.file_size || 0)}</p>
-                  <p>Uploaded {new Date(document.created_at).toLocaleDateString()}</p>
-                  <p>
-                    By: {document.uploaded_by === user?.id ? 'You' : 
-                         (userType === 'provider' ? 'Client' : 'Provider')}
-                  </p>
-                  {!targetClientId && effectiveSelectedRelationship === 'all' && relationships && relationships.length > 1 && (
-                    <p className="text-blue-600 font-medium">
-                      {getRelationshipContext(document)}
-                    </p>
-                  )}
-                </div>
-                <div className="flex space-x-2 pt-2">
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => handleDownload(document)}
-                  >
-                    <Download className="h-4 w-4 mr-1" />
-                    Download
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => window.open(document.file_url, '_blank')}
-                  >
-                    <Eye className="h-4 w-4 mr-1" />
-                    View
-                  </Button>
-                  {canDelete(document) && (
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => handleDelete(document)}
-                      disabled={deleteMutation.isPending}
-                    >
-                      <Trash2 className="h-4 w-4 mr-1" />
-                      Delete
-                    </Button>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+            <DocumentCard 
+              key={document.id}
+              document={document}
+              userType={userType}
+              canInteract={canInteract}
+              onDownload={handleDownload}
+              onDelete={handleDelete}
+              canDelete={canDelete(document)}
+              getRelationshipContext={getRelationshipContext}
+            />
           ))
         )}
       </div>
     </div>
+  );
+};
+
+const DocumentCard = ({ document, userType, canInteract, onDownload, onDelete, canDelete, getRelationshipContext }: any) => {
+  const shouldBlur = userType === 'provider' && !canInteract;
+
+  return (
+    <BlurredContent
+      isBlurred={shouldBlur}
+      title="Client Limit Reached"
+      description="Upgrade your plan to access documents from more clients."
+    >
+      <Card className="hover:shadow-md transition-shadow">
+        <CardHeader className="pb-3">
+          <div className="flex items-center space-x-2">
+            <FileText className="h-5 w-5 text-blue-600" />
+            <CardTitle className="text-lg truncate" title={document.file_name}>
+              {document.file_name}
+            </CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {document.description && (
+            <p className="text-sm text-gray-600">{document.description}</p>
+          )}
+          <div className="text-xs text-gray-500 space-y-1">
+            <p>Size: {formatFileSize(document.file_size || 0)}</p>
+            <p>Uploaded {new Date(document.created_at).toLocaleDateString()}</p>
+            <p>
+              By: {document.uploaded_by === user?.id ? 'You' : 
+                   (userType === 'provider' ? 'Client' : 'Provider')}
+            </p>
+            {!targetClientId && effectiveSelectedRelationship === 'all' && relationships && relationships.length > 1 && (
+              <p className="text-blue-600 font-medium">
+                {getRelationshipContext(document)}
+              </p>
+            )}
+          </div>
+          <div className={`flex space-x-2 pt-2 ${shouldBlur ? 'opacity-50 pointer-events-none' : ''}`}>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => onDownload(document)}
+            >
+              <Download className="h-4 w-4 mr-1" />
+              Download
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => window.open(document.file_url, '_blank')}
+            >
+              <Eye className="h-4 w-4 mr-1" />
+              View
+            </Button>
+            {canDelete(document) && (
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => onDelete(document)}
+                disabled={deleteMutation.isPending}
+              >
+                <Trash2 className="h-4 w-4 mr-1" />
+                Delete
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    </BlurredContent>
   );
 };
