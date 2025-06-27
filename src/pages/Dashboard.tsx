@@ -24,7 +24,7 @@ const Dashboard = () => {
   console.log('Dashboard - isDemoClient:', isDemoClient);
 
   // First, get all client records for this user (regardless of provider connections)
-  const { data: allClientRecords, isLoading: clientLoading } = useQuery({
+  const { data: allClientRecords = [], isLoading: clientLoading } = useQuery({
     queryKey: ['all-clients', user?.id],
     queryFn: async () => {
       if (!user?.id) return [];
@@ -50,7 +50,7 @@ const Dashboard = () => {
   });
 
   // Get client records with provider info for dashboard display
-  const { data: clientsWithProviders } = useQuery({
+  const { data: clientsWithProviders = [] } = useQuery({
     queryKey: ['clients-with-providers', user?.id],
     queryFn: async () => {
       if (!user?.id) return [];
@@ -89,7 +89,7 @@ const Dashboard = () => {
     enabled: !!user?.id,
   });
 
-  // Only check if user is a provider if they don't have any client records
+  // Check if user is a provider - only if they don't have any client records
   const { data: provider, isLoading: providerLoading } = useQuery({
     queryKey: ['provider', user?.id],
     queryFn: async () => {
@@ -112,7 +112,7 @@ const Dashboard = () => {
         return null;
       }
     },
-    enabled: !!user?.id && (!allClientRecords || allClientRecords.length === 0),
+    enabled: !!user?.id && allClientRecords.length === 0,
   });
 
   // Check if current user is already connected to the current provider
@@ -136,7 +136,8 @@ const Dashboard = () => {
     }
   }, [providerSlug, isDemoClient, user]);
 
-  if (clientLoading || ((!allClientRecords || allClientRecords.length === 0) && providerLoading)) {
+  // Show loading only when we're actually loading and user exists
+  if (user && (clientLoading || (allClientRecords.length === 0 && providerLoading))) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
@@ -145,7 +146,7 @@ const Dashboard = () => {
   }
 
   const connectedToCurrentProvider = isConnectedToCurrentProvider();
-  const hasAnyClientRecords = allClientRecords && allClientRecords.length > 0;
+  const hasAnyClientRecords = allClientRecords.length > 0;
 
   console.log('Dashboard - Final state:');
   console.log('  allClientRecords:', allClientRecords);
@@ -178,16 +179,16 @@ const Dashboard = () => {
         {/* If user has client records and no provider link, show client dashboard */}
         {!isDemoClient && !providerSlug && hasAnyClientRecords && !provider && (
           <ClientDashboard 
-            clients={clientsWithProviders || []} 
-            allClients={allClientRecords || []}
+            clients={clientsWithProviders} 
+            allClients={allClientRecords}
           />
         )}
         
         {/* If user is connected to the provider, show client dashboard */}
         {!isDemoClient && providerSlug && user && connectedToCurrentProvider && (
           <ClientDashboard 
-            clients={clientsWithProviders || []} 
-            allClients={allClientRecords || []}
+            clients={clientsWithProviders} 
+            allClients={allClientRecords}
           />
         )}
         
