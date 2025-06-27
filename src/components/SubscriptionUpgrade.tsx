@@ -1,8 +1,7 @@
-
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Check, Crown, Star, Zap, ArrowDown } from 'lucide-react';
+import { Check, Crown, Star, Zap, ArrowDown, ExternalLink } from 'lucide-react';
 import { useSubscription } from '@/hooks/useSubscription';
 import { useState, useEffect } from 'react';
 import { toast } from '@/hooks/use-toast';
@@ -87,14 +86,33 @@ export const SubscriptionUpgrade = ({ currentTier, onUpgrade }: SubscriptionUpgr
         setLoading(null);
       }, 3000);
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error opening customer portal:', error);
       setLoading(null);
-      toast({
-        title: "Error",
-        description: "Failed to open subscription management. Please try again.",
-        variant: "destructive",
-      });
+      
+      if (error?.response?.data?.error === "STRIPE_CONFIG_REQUIRED") {
+        toast({
+          title: "Configuration Required",
+          description: "Stripe Customer Portal needs to be configured first.",
+          variant: "destructive",
+          action: (
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => window.open("https://dashboard.stripe.com/test/settings/billing/portal", "_blank")}
+            >
+              <ExternalLink className="h-4 w-4 mr-2" />
+              Setup Portal
+            </Button>
+          ),
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: "Failed to open subscription management. Please try again.",
+          variant: "destructive",
+        });
+      }
     }
   };
 
