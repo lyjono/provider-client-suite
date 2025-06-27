@@ -2,21 +2,41 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Crown, CheckCircle, AlertCircle } from 'lucide-react';
+import { Crown, CheckCircle, AlertCircle, ArrowDown } from 'lucide-react';
 import { useSubscription } from '@/hooks/useSubscription';
 import { SubscriptionUpgrade } from '@/components/SubscriptionUpgrade';
 import { useState } from 'react';
+import { toast } from '@/hooks/use-toast';
 
 export const ProviderSubscriptionManager = () => {
   const { subscribed, subscription_tier, subscription_end, openCustomerPortal } = useSubscription();
   const [showUpgrade, setShowUpgrade] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const currentTier = subscription_tier || 'free';
   const isExpired = subscription_end ? new Date(subscription_end) < new Date() : false;
 
   const handleUpgrade = (tier: 'starter' | 'pro') => {
-    // This will be handled by the SubscriptionUpgrade component
     setShowUpgrade(false);
+  };
+
+  const handleManageSubscription = async () => {
+    try {
+      setLoading(true);
+      await openCustomerPortal();
+      toast({
+        title: "Redirecting to Stripe",
+        description: "You're being redirected to manage your subscription.",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to open subscription management. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setTimeout(() => setLoading(false), 3000);
+    }
   };
 
   if (showUpgrade) {
@@ -41,9 +61,13 @@ export const ProviderSubscriptionManager = () => {
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold">Subscription Management</h2>
         {subscribed && (
-          <Button onClick={openCustomerPortal} variant="outline">
+          <Button 
+            onClick={handleManageSubscription} 
+            variant="outline"
+            disabled={loading}
+          >
             <Crown className="h-4 w-4 mr-2" />
-            Manage Subscription
+            {loading ? 'Opening...' : 'Manage Subscription'}
           </Button>
         )}
       </div>
@@ -88,14 +112,26 @@ export const ProviderSubscriptionManager = () => {
             </div>
           </div>
 
-          {(!subscribed || currentTier === 'free') && (
-            <div className="pt-4 border-t">
+          <div className="pt-4 border-t space-y-2">
+            {(!subscribed || currentTier === 'free') && (
               <Button onClick={() => setShowUpgrade(true)} className="w-full">
                 <Crown className="h-4 w-4 mr-2" />
                 Upgrade Plan
               </Button>
-            </div>
-          )}
+            )}
+            
+            {subscribed && currentTier !== 'free' && (
+              <Button 
+                onClick={handleManageSubscription} 
+                variant="outline" 
+                className="w-full"
+                disabled={loading}
+              >
+                <ArrowDown className="h-4 w-4 mr-2" />
+                {loading ? 'Opening Portal...' : 'Cancel Subscription (Downgrade to Free)'}
+              </Button>
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>

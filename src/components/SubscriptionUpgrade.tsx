@@ -2,7 +2,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Check, Crown, Star, Zap } from 'lucide-react';
+import { Check, Crown, Star, Zap, ArrowDown } from 'lucide-react';
 import { useSubscription } from '@/hooks/useSubscription';
 import { useState, useEffect } from 'react';
 import { toast } from '@/hooks/use-toast';
@@ -13,7 +13,7 @@ interface SubscriptionUpgradeProps {
 }
 
 export const SubscriptionUpgrade = ({ currentTier, onUpgrade }: SubscriptionUpgradeProps) => {
-  const { createCheckoutSession } = useSubscription();
+  const { createCheckoutSession, openCustomerPortal } = useSubscription();
   const [loading, setLoading] = useState<string | null>(null);
 
   const plans = [
@@ -53,13 +53,11 @@ export const SubscriptionUpgrade = ({ currentTier, onUpgrade }: SubscriptionUpgr
       await createCheckoutSession(tier);
       onUpgrade(tier);
       
-      // Show success message and reset loading after a short delay
       toast({
         title: "Redirecting to Stripe",
         description: "You're being redirected to complete your subscription upgrade.",
       });
       
-      // Reset loading state after 3 seconds to handle cases where user might close the tab
       setTimeout(() => {
         setLoading(null);
       }, 3000);
@@ -75,10 +73,34 @@ export const SubscriptionUpgrade = ({ currentTier, onUpgrade }: SubscriptionUpgr
     }
   };
 
+  const handleDowngradeToFree = async () => {
+    try {
+      setLoading('free');
+      await openCustomerPortal();
+      
+      toast({
+        title: "Manage Subscription",
+        description: "You're being redirected to cancel your subscription and downgrade to the free plan.",
+      });
+      
+      setTimeout(() => {
+        setLoading(null);
+      }, 3000);
+      
+    } catch (error) {
+      console.error('Error opening customer portal:', error);
+      setLoading(null);
+      toast({
+        title: "Error",
+        description: "Failed to open subscription management. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
   // Reset loading state when component unmounts or when focus returns to window
   useEffect(() => {
     const handleFocus = () => {
-      // Reset loading state when user returns to the page
       if (loading) {
         setTimeout(() => {
           setLoading(null);
@@ -89,7 +111,7 @@ export const SubscriptionUpgrade = ({ currentTier, onUpgrade }: SubscriptionUpgr
     window.addEventListener('focus', handleFocus);
     return () => {
       window.removeEventListener('focus', handleFocus);
-      setLoading(null); // Clean up on unmount
+      setLoading(null);
     };
   }, [loading]);
 
@@ -148,9 +170,27 @@ export const SubscriptionUpgrade = ({ currentTier, onUpgrade }: SubscriptionUpgr
                       Current Plan
                     </Button>
                   ) : plan.id === 'free' ? (
-                    <Button variant="outline" disabled className="w-full">
-                      Downgrade Not Available
-                    </Button>
+                    currentTier !== 'free' ? (
+                      <Button 
+                        onClick={handleDowngradeToFree}
+                        disabled={isLoading || loading !== null}
+                        variant="outline"
+                        className="w-full"
+                      >
+                        {isLoading ? (
+                          'Opening Portal...'
+                        ) : (
+                          <>
+                            <ArrowDown className="h-4 w-4 mr-2" />
+                            Downgrade to Free
+                          </>
+                        )}
+                      </Button>
+                    ) : (
+                      <Button disabled className="w-full">
+                        Current Plan
+                      </Button>
+                    )
                   ) : (
                     <Button 
                       onClick={() => handleUpgradeClick(plan.id as 'starter' | 'pro')}
@@ -172,6 +212,14 @@ export const SubscriptionUpgrade = ({ currentTier, onUpgrade }: SubscriptionUpgr
           );
         })}
       </div>
+
+      {currentTier !== 'free' && (
+        <div className="mt-8 text-center">
+          <p className="text-sm text-gray-600 mb-4">
+            Need to cancel your subscription? Use the "Downgrade to Free" button above to manage your subscription through Stripe.
+          </p>
+        </div>
+      )}
     </div>
   );
 };
