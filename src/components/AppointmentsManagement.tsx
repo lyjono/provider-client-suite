@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -9,6 +8,9 @@ import { Calendar, Clock, Video, MapPin, Settings, Check, X } from 'lucide-react
 import { AvailabilityManagement } from '@/components/AvailabilityManagement';
 import { VideoCallButton } from '@/components/VideoCallButton';
 import { toast } from 'sonner';
+import type { Database } from '@/integrations/supabase/types';
+
+type AppointmentStatus = Database['public']['Enums']['appointment_status'];
 
 interface AppointmentsManagementProps {
   providerId: string;
@@ -35,7 +37,7 @@ export const AppointmentsManagement = ({ providerId }: AppointmentsManagementPro
     },
   });
 
-  const updateAppointmentStatus = async (appointmentId: string, status: string) => {
+  const updateAppointmentStatus = async (appointmentId: string, status: AppointmentStatus) => {
     try {
       const { error } = await supabase
         .from('appointments')
