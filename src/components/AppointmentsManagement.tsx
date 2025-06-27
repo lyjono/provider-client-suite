@@ -1,13 +1,14 @@
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Calendar, Clock, Video, MapPin, Settings } from 'lucide-react';
+import { Calendar, Clock, Video, MapPin, Settings, Check, X } from 'lucide-react';
 import { AvailabilityManagement } from '@/components/AvailabilityManagement';
 import { VideoCallButton } from '@/components/VideoCallButton';
+import { toast } from 'sonner';
 
 interface AppointmentsManagementProps {
   providerId: string;
@@ -15,6 +16,7 @@ interface AppointmentsManagementProps {
 
 export const AppointmentsManagement = ({ providerId }: AppointmentsManagementProps) => {
   const [activeTab, setActiveTab] = useState('appointments');
+  const queryClient = useQueryClient();
 
   // Fetch appointments
   const { data: appointments, isLoading } = useQuery({
@@ -32,6 +34,25 @@ export const AppointmentsManagement = ({ providerId }: AppointmentsManagementPro
       return data || [];
     },
   });
+
+  const updateAppointmentStatus = async (appointmentId: string, status: string) => {
+    try {
+      const { error } = await supabase
+        .from('appointments')
+        .update({ status })
+        .eq('id', appointmentId);
+
+      if (error) throw error;
+
+      // Refresh the appointments data
+      queryClient.invalidateQueries({ queryKey: ['provider-appointments', providerId] });
+      
+      toast.success(`Appointment ${status} successfully`);
+    } catch (error) {
+      console.error('Error updating appointment status:', error);
+      toast.error('Failed to update appointment status');
+    }
+  };
 
   const formatAppointmentTime = (date: string, time: string) => {
     const appointmentDate = new Date(`${date}T${time}`);
@@ -116,6 +137,28 @@ export const AppointmentsManagement = ({ providerId }: AppointmentsManagementPro
                             with {getClientName(appointment)}
                           </p>
 
+                          {appointment.status === 'pending' && (
+                            <div className="flex space-x-2 pt-2">
+                              <Button
+                                size="sm"
+                                onClick={() => updateAppointmentStatus(appointment.id, 'confirmed')}
+                                className="bg-green-600 hover:bg-green-700"
+                              >
+                                <Check className="h-4 w-4 mr-1" />
+                                Confirm
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => updateAppointmentStatus(appointment.id, 'cancelled')}
+                                className="text-red-600 border-red-600 hover:bg-red-50"
+                              >
+                                <X className="h-4 w-4 mr-1" />
+                                Cancel
+                              </Button>
+                            </div>
+                          )}
+
                           {appointment.appointment_type === 'online' && appointment.video_call_link && appointment.video_call_link.startsWith('room-') && (
                             <div className="pt-2">
                               <VideoCallButton
@@ -169,6 +212,28 @@ export const AppointmentsManagement = ({ providerId }: AppointmentsManagementPro
                         <p className="text-sm text-gray-600">
                           with {getClientName(appointment)}
                         </p>
+
+                        {appointment.status === 'pending' && (
+                          <div className="flex space-x-2 pt-1">
+                            <Button
+                              size="sm"
+                              onClick={() => updateAppointmentStatus(appointment.id, 'confirmed')}
+                              className="bg-green-600 hover:bg-green-700 text-xs h-7"
+                            >
+                              <Check className="h-3 w-3 mr-1" />
+                              Confirm
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => updateAppointmentStatus(appointment.id, 'cancelled')}
+                              className="text-red-600 border-red-600 hover:bg-red-50 text-xs h-7"
+                            >
+                              <X className="h-3 w-3 mr-1" />
+                              Cancel
+                            </Button>
+                          </div>
+                        )}
 
                         {appointment.appointment_type === 'online' && appointment.video_call_link && appointment.video_call_link.startsWith('room-') && (
                           <div className="pt-1">
