@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Calendar, Clock, Video, MapPin, Settings } from 'lucide-react';
 import { AvailabilityManagement } from '@/components/AvailabilityManagement';
+import { VideoCallButton } from '@/components/VideoCallButton';
 
 interface AppointmentsManagementProps {
   providerId: string;
@@ -115,16 +116,13 @@ export const AppointmentsManagement = ({ providerId }: AppointmentsManagementPro
                             with {getClientName(appointment)}
                           </p>
 
-                          {appointment.video_call_link && appointment.appointment_type === 'online' && (
+                          {appointment.appointment_type === 'online' && appointment.video_call_link && (
                             <div className="pt-2">
-                              <Button 
-                                variant="outline" 
-                                size="sm"
-                                onClick={() => window.open(appointment.video_call_link, '_blank')}
-                              >
-                                <Video className="h-4 w-4 mr-2" />
-                                Start Video Call
-                              </Button>
+                              <VideoCallButton
+                                roomId={appointment.video_call_link}
+                                userId={providerId}
+                                disabled={appointment.status !== 'confirmed'}
+                              />
                             </div>
                           )}
                         </div>
@@ -172,16 +170,13 @@ export const AppointmentsManagement = ({ providerId }: AppointmentsManagementPro
                           with {getClientName(appointment)}
                         </p>
 
-                        {appointment.video_call_link && appointment.appointment_type === 'online' && (
+                        {appointment.appointment_type === 'online' && appointment.video_call_link && (
                           <div className="pt-1">
-                            <Button 
-                              variant="outline" 
-                              size="sm"
-                              onClick={() => window.open(appointment.video_call_link, '_blank')}
-                            >
-                              <Video className="h-4 w-4 mr-1" />
-                              Join Call
-                            </Button>
+                            <VideoCallButton
+                              roomId={appointment.video_call_link}
+                              userId={providerId}
+                              disabled={appointment.status !== 'confirmed'}
+                            />
                           </div>
                         )}
                       </div>

@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -10,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Calendar, Clock, Video, MapPin, Plus } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { VideoCallButton } from '@/components/VideoCallButton';
 
 interface AppointmentSchedulingProps {
   clientId: string;
@@ -330,16 +330,13 @@ export const AppointmentScheduling = ({ clientId, providerId }: AppointmentSched
                       </span>
                     </div>
 
-                    {appointment.video_call_link && appointment.appointment_type === 'online' && (
+                    {appointment.appointment_type === 'online' && appointment.video_call_link && (
                       <div className="pt-2">
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => window.open(appointment.video_call_link, '_blank')}
-                        >
-                          <Video className="h-4 w-4 mr-2" />
-                          Join Video Call
-                        </Button>
+                        <VideoCallButton
+                          roomId={appointment.video_call_link}
+                          userId={clientId}
+                          disabled={appointment.status !== 'confirmed'}
+                        />
                       </div>
                     )}
 
