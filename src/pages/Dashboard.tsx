@@ -23,14 +23,11 @@ const Dashboard = () => {
   console.log('Dashboard - providerSlug:', providerSlug);
   console.log('Dashboard - isDemoClient:', isDemoClient);
 
-  // First, get all client records for this user (regardless of provider connections)
-  const { data: allClientRecords = [], isLoading: clientLoading, error: clientError } = useQuery({
+  // Get all client records for this user
+  const { data: allClientRecords = [], isLoading: clientLoading } = useQuery({
     queryKey: ['all-clients', user?.id],
     queryFn: async () => {
-      if (!user?.id) {
-        console.log('No user ID, returning empty array');
-        return [];
-      }
+      if (!user?.id) return [];
       
       console.log('Fetching all clients for user:', user.id);
       
@@ -41,25 +38,20 @@ const Dashboard = () => {
       
       if (error) {
         console.error('All clients query error:', error);
-        throw error; // Let React Query handle the error
+        throw error;
       }
       
       console.log('All client records found:', clientData?.length || 0);
       return clientData || [];
     },
     enabled: !!user?.id,
-    retry: 3,
-    retryDelay: 1000,
   });
 
-  // Get client records with provider info for dashboard display
-  const { data: clientsWithProviders = [], error: clientsWithProvidersError } = useQuery({
+  // Get client records with provider info
+  const { data: clientsWithProviders = [] } = useQuery({
     queryKey: ['clients-with-providers', user?.id],
     queryFn: async () => {
-      if (!user?.id) {
-        console.log('No user ID for clients with providers');
-        return [];
-      }
+      if (!user?.id) return [];
       
       console.log('Fetching clients with providers for user:', user.id);
       
@@ -91,18 +83,13 @@ const Dashboard = () => {
       return clientData || [];
     },
     enabled: !!user?.id,
-    retry: 3,
-    retryDelay: 1000,
   });
 
-  // Check if user is a provider - only query when we know they don't have client records
-  const { data: provider, isLoading: providerLoading, error: providerError } = useQuery({
+  // Check if user is a provider - only when they don't have client records
+  const { data: provider, isLoading: providerLoading } = useQuery({
     queryKey: ['provider', user?.id],
     queryFn: async () => {
-      if (!user?.id) {
-        console.log('No user ID for provider check');
-        return null;
-      }
+      if (!user?.id) return null;
       
       console.log('Checking if user is a provider:', user.id);
       
@@ -121,8 +108,6 @@ const Dashboard = () => {
       return providerData;
     },
     enabled: !!user?.id && !clientLoading && allClientRecords.length === 0,
-    retry: 3,
-    retryDelay: 1000,
   });
 
   // Check if current user is already connected to the current provider
@@ -133,73 +118,33 @@ const Dashboard = () => {
 
   useEffect(() => {
     // Show landing page logic - only for non-authenticated users
-    if (providerSlug && !isDemoClient) {
-      if (!user) {
-        // Not logged in - show landing page
-        setShowLandingPage(true);
-      } else {
-        // User is logged in - don't show landing page, proceed with connection flow
-        setShowLandingPage(false);
-      }
+    if (providerSlug && !isDemoClient && !user) {
+      setShowLandingPage(true);
     } else {
       setShowLandingPage(false);
     }
   }, [providerSlug, isDemoClient, user]);
 
   // Show loading only when we're actually loading and user exists
-  if (user && clientLoading) {
-    console.log('Dashboard - Loading clients...');
+  if (user && (clientLoading || (allClientRecords.length === 0 && providerLoading))) {
+    console.log('Dashboard - Loading...');
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
       </div>
     );
   }
-
-  // Show loading for provider query only if we need to check for provider and it's loading
-  if (user && !clientLoading && allClientRecords.length === 0 && providerLoading) {
-    console.log('Dashboard - Loading provider...');
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
-
-  // Handle errors by showing them instead of infinite loading
-  if (clientError) {
-    console.error('Client error:', clientError);
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-red-600 mb-4">Error Loading Dashboard</h1>
-          <p className="text-gray-600 mb-4">There was an error loading your client data.</p>
-          <button 
-            onClick={() => window.location.reload()} 
-            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-          >
-            Retry
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (clientsWithProvidersError) console.error('Clients with providers error:', clientsWithProvidersError);
-  if (providerError) console.error('Provider error:', providerError);
 
   const connectedToCurrentProvider = isConnectedToCurrentProvider();
   const hasAnyClientRecords = allClientRecords.length > 0;
 
   console.log('Dashboard - Final state:');
-  console.log('  allClientRecords:', allClientRecords);
-  console.log('  clientsWithProviders:', clientsWithProviders);
-  console.log('  provider:', provider);
+  console.log('  allClientRecords:', allClientRecords.length);
+  console.log('  clientsWithProviders:', clientsWithProviders.length);
+  console.log('  provider:', !!provider);
   console.log('  showLandingPage:', showLandingPage);
   console.log('  isConnectedToCurrentProvider:', connectedToCurrentProvider);
   console.log('  hasAnyClientRecords:', hasAnyClientRecords);
-  console.log('  clientLoading:', clientLoading);
-  console.log('  providerLoading:', providerLoading);
 
   return (
     <AuthGuard>
@@ -243,7 +188,9 @@ const Dashboard = () => {
         )}
         
         {/* Provider dashboard - only for users who are providers and didn't come through provider link */}
-        {!isDemoClient && !providerSlug && provider && <ProviderDashboard provider={provider} />}
+        {!isDemoClient && !providerSlug && provider && (
+          <ProviderDashboard provider={provider} />
+        )}
       </div>
     </AuthGuard>
   );
