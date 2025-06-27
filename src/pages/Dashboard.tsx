@@ -67,7 +67,9 @@ const Dashboard = () => {
               provider_slug,
               email,
               bio,
-              profile_image_url
+              profile_image_url,
+              tagline,
+              expertise_areas(name)
             )
           `)
           .eq('user_id', user.id);
@@ -173,9 +175,14 @@ const Dashboard = () => {
           <ClientOnboarding providerSlug={providerSlug} />
         )}
         
-        {/* If user has client records and no provider link, show client dashboard */}
+        {/* If user has client records (connected to providers) and no provider link, show client dashboard */}
         {!isDemoClient && !providerSlug && clientsWithProviders && clientsWithProviders.length > 0 && (
           <ClientDashboard clients={clientsWithProviders} />
+        )}
+        
+        {/* If user has client records (including standalone) and no provider link, show client dashboard */}
+        {!isDemoClient && !providerSlug && hasAnyClientRecords && !provider && (
+          <ClientDashboard clients={clientsWithProviders || []} />
         )}
         
         {/* If user is connected to the provider, show client dashboard */}

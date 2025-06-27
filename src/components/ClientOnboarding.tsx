@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -114,13 +115,18 @@ export const ClientOnboarding = ({ providerSlug }: ClientOnboardingProps) => {
 
       const { data, error } = await supabase
         .from('clients')
-        .insert([
-          {
-            ...clientData,
-            provider_id: provider.id,
-            user_id: user.id,
-          },
-        ])
+        .insert({
+          first_name: clientData.firstName,
+          last_name: clientData.lastName,
+          email: clientData.email,
+          phone: clientData.phone,
+          address: clientData.address,
+          city_id: clientData.cityId || null,
+          country_id: clientData.countryId || null,
+          notes: clientData.notes,
+          provider_id: provider.id,
+          user_id: user.id,
+        })
         .select()
         .single();
 
