@@ -27,92 +27,102 @@ const Dashboard = () => {
   const { data: allClientRecords = [], isLoading: clientLoading, error: clientError } = useQuery({
     queryKey: ['all-clients', user?.id],
     queryFn: async () => {
-      if (!user?.id) return [];
-      try {
-        const { data: clientData, error } = await supabase
-          .from('clients')
-          .select('*')
-          .eq('user_id', user.id);
-        
-        if (error) {
-          console.error('All clients query error:', error);
-          return [];
-        }
-        
-        console.log('All client records:', clientData);
-        return clientData || [];
-      } catch (error) {
-        console.error('All clients query failed:', error);
+      if (!user?.id) {
+        console.log('No user ID, returning empty array');
         return [];
       }
+      
+      console.log('Fetching all clients for user:', user.id);
+      
+      const { data: clientData, error } = await supabase
+        .from('clients')
+        .select('*')
+        .eq('user_id', user.id);
+      
+      if (error) {
+        console.error('All clients query error:', error);
+        throw error; // Let React Query handle the error
+      }
+      
+      console.log('All client records found:', clientData?.length || 0);
+      return clientData || [];
     },
     enabled: !!user?.id,
+    retry: 3,
+    retryDelay: 1000,
   });
 
   // Get client records with provider info for dashboard display
   const { data: clientsWithProviders = [], error: clientsWithProvidersError } = useQuery({
     queryKey: ['clients-with-providers', user?.id],
     queryFn: async () => {
-      if (!user?.id) return [];
-      try {
-        const { data: clientData, error } = await supabase
-          .from('clients')
-          .select(`
-            *,
-            providers!inner(
-              id,
-              first_name,
-              last_name,
-              company_name,
-              provider_slug,
-              email,
-              bio,
-              profile_image_url,
-              tagline,
-              expertise_areas(name)
-            )
-          `)
-          .eq('user_id', user.id);
-        
-        if (error) {
-          console.error('Clients with providers query error:', error);
-          return [];
-        }
-        
-        console.log('Clients with providers:', clientData);
-        return clientData || [];
-      } catch (error) {
-        console.error('Clients with providers query failed:', error);
+      if (!user?.id) {
+        console.log('No user ID for clients with providers');
         return [];
       }
+      
+      console.log('Fetching clients with providers for user:', user.id);
+      
+      const { data: clientData, error } = await supabase
+        .from('clients')
+        .select(`
+          *,
+          providers!inner(
+            id,
+            first_name,
+            last_name,
+            company_name,
+            provider_slug,
+            email,
+            bio,
+            profile_image_url,
+            tagline,
+            expertise_areas(name)
+          )
+        `)
+        .eq('user_id', user.id);
+      
+      if (error) {
+        console.error('Clients with providers query error:', error);
+        throw error;
+      }
+      
+      console.log('Clients with providers found:', clientData?.length || 0);
+      return clientData || [];
     },
     enabled: !!user?.id,
+    retry: 3,
+    retryDelay: 1000,
   });
 
   // Check if user is a provider - only query when we know they don't have client records
   const { data: provider, isLoading: providerLoading, error: providerError } = useQuery({
     queryKey: ['provider', user?.id],
     queryFn: async () => {
-      if (!user?.id) return null;
-      try {
-        const { data, error } = await supabase
-          .from('providers')
-          .select('*')
-          .eq('user_id', user.id);
-        
-        if (error) {
-          console.error('Provider query error:', error);
-          return null;
-        }
-        
-        console.log('Provider query result:', data);
-        return data && data.length > 0 ? data[0] : null;
-      } catch (error) {
-        console.error('Provider query failed:', error);
+      if (!user?.id) {
+        console.log('No user ID for provider check');
         return null;
       }
+      
+      console.log('Checking if user is a provider:', user.id);
+      
+      const { data, error } = await supabase
+        .from('providers')
+        .select('*')
+        .eq('user_id', user.id);
+      
+      if (error) {
+        console.error('Provider query error:', error);
+        throw error;
+      }
+      
+      const providerData = data && data.length > 0 ? data[0] : null;
+      console.log('Provider found:', !!providerData);
+      return providerData;
     },
     enabled: !!user?.id && !clientLoading && allClientRecords.length === 0,
+    retry: 3,
+    retryDelay: 1000,
   });
 
   // Check if current user is already connected to the current provider
@@ -156,8 +166,25 @@ const Dashboard = () => {
     );
   }
 
-  // If there are any errors, log them but don't block the UI
-  if (clientError) console.error('Client error:', clientError);
+  // Handle errors by showing them instead of infinite loading
+  if (clientError) {
+    console.error('Client error:', clientError);
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-red-600 mb-4">Error Loading Dashboard</h1>
+          <p className="text-gray-600 mb-4">There was an error loading your client data.</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (clientsWithProvidersError) console.error('Clients with providers error:', clientsWithProvidersError);
   if (providerError) console.error('Provider error:', providerError);
 
