@@ -8,50 +8,123 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Helper logging function for enhanced debugging
+const logStep = (step: string, details?: any) => {
+  const detailsStr = details ? ` - ${JSON.stringify(details)}` : '';
+  console.log(`[CREATE-CHECKOUT] ${step}${detailsStr}`);
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Use the service role key to perform writes in Supabase
   const supabaseClient = createClient(
     Deno.env.get("SUPABASE_URL") ?? "",
-    Deno.env.get("SUPABASE_ANON_KEY") ?? ""
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+    { auth: { persistSession: false } }
   );
 
   try {
-    const authHeader = req.headers.get("Authorization")!;
+    logStep("Function started");
+
+    const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+    if (!stripeKey) throw new Error("STRIPE_SECRET_KEY is not set");
+    logStep("Stripe key verified");
+
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) throw new Error("No authorization header provided");
+    logStep("Authorization header found");
+
     const token = authHeader.replace("Bearer ", "");
-    const { data } = await supabaseClient.auth.getUser(token);
-    const user = data.user;
+    const { data: userData, error: userError } = await supabaseClient.auth.getUser(token);
+    if (userError) throw new Error(`Authentication error: ${userError.message}`);
+    const user = userData.user;
     if (!user?.email) throw new Error("User not authenticated or email not available");
+    logStep("User authenticated", { userId: user.id, email: user.email });
 
     const { tier } = await req.json();
-    if (!tier) throw new Error("Subscription tier is required");
+    if (!tier || !['starter', 'pro'].includes(tier)) {
+      throw new Error("Invalid tier specified");
+    }
+    logStep("Tier requested", { tier });
 
-    const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", { apiVersion: "2023-10-16" });
+    const stripe = new Stripe(stripeKey, { apiVersion: "2023-10-16" });
+    
+    // Find existing customer
     const customers = await stripe.customers.list({ email: user.email, limit: 1 });
     let customerId;
+    let hasActiveSubscription = false;
+    let activeSubscriptionId = null;
+
     if (customers.data.length > 0) {
       customerId = customers.data[0].id;
+      logStep("Found existing customer", { customerId });
+
+      // Check for existing active subscriptions
+      const subscriptions = await stripe.subscriptions.list({
+        customer: customerId,
+        status: "active",
+        limit: 10,
+      });
+
+      // Filter out subscriptions that are marked for cancellation
+      const activeSubscriptions = subscriptions.data.filter(sub => !sub.cancel_at_period_end);
+      
+      if (activeSubscriptions.length > 0) {
+        hasActiveSubscription = true;
+        activeSubscriptionId = activeSubscriptions[0].id;
+        logStep("Found active subscription", { subscriptionId: activeSubscriptionId });
+
+        // If user has an active subscription, redirect to customer portal for changes
+        const origin = req.headers.get("origin") || "http://localhost:3000";
+        const portalSession = await stripe.billingPortal.sessions.create({
+          customer: customerId,
+          return_url: `${origin}/dashboard`,
+        });
+        
+        logStep("Redirecting to customer portal for subscription changes");
+        return new Response(JSON.stringify({ 
+          url: portalSession.url,
+          message: "You already have an active subscription. Use the customer portal to make changes."
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        });
+      }
+    } else {
+      // Create new customer if none exists
+      const customer = await stripe.customers.create({
+        email: user.email,
+        metadata: { user_id: user.id }
+      });
+      customerId = customer.id;
+      logStep("Created new customer", { customerId });
     }
 
-    // Set pricing based on tier
-    const priceData = {
-      starter: { amount: 2900, name: "Starter Plan" },
-      pro: { amount: 7900, name: "Pro Plan" }
+    // Set up pricing based on tier
+    const priceMapping = {
+      starter: { amount: 2999, name: "Starter Plan" }, // $29.99
+      pro: { amount: 7999, name: "Pro Plan" } // $79.99
     };
 
-    const selectedPlan = priceData[tier as keyof typeof priceData];
-    if (!selectedPlan) throw new Error("Invalid subscription tier");
+    const selectedPlan = priceMapping[tier as keyof typeof priceMapping];
+    logStep("Selected plan", { tier, price: selectedPlan });
 
+    const origin = req.headers.get("origin") || "http://localhost:3000";
+
+    // Create checkout session for new subscription
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
-      customer_email: customerId ? undefined : user.email,
       line_items: [
         {
           price_data: {
             currency: "usd",
-            product_data: { name: selectedPlan.name },
+            product_data: {
+              name: selectedPlan.name,
+              description: `${tier} subscription plan`
+            },
             unit_amount: selectedPlan.amount,
             recurring: { interval: "month" },
           },
@@ -59,16 +132,27 @@ serve(async (req) => {
         },
       ],
       mode: "subscription",
-      success_url: `${req.headers.get("origin")}/dashboard?success=true`,
-      cancel_url: `${req.headers.get("origin")}/dashboard?canceled=true`,
+      success_url: `${origin}/dashboard?success=true`,
+      cancel_url: `${origin}/dashboard?canceled=true`,
+      allow_promotion_codes: true,
+      billing_address_collection: "required",
+      metadata: {
+        user_id: user.id,
+        tier: tier
+      }
     });
+
+    logStep("Checkout session created", { sessionId: session.id, url: session.url });
 
     return new Response(JSON.stringify({ url: session.url }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 200,
     });
+
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logStep("ERROR in create-checkout", { message: errorMessage });
+    return new Response(JSON.stringify({ error: errorMessage }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 500,
     });
