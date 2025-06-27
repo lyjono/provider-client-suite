@@ -24,7 +24,7 @@ const Dashboard = () => {
   console.log('Dashboard - isDemoClient:', isDemoClient);
 
   // First, get all client records for this user (regardless of provider connections)
-  const { data: allClientRecords = [], isLoading: clientLoading } = useQuery({
+  const { data: allClientRecords = [], isLoading: clientLoading, error: clientError } = useQuery({
     queryKey: ['all-clients', user?.id],
     queryFn: async () => {
       if (!user?.id) return [];
@@ -50,7 +50,7 @@ const Dashboard = () => {
   });
 
   // Get client records with provider info for dashboard display
-  const { data: clientsWithProviders = [] } = useQuery({
+  const { data: clientsWithProviders = [], error: clientsWithProvidersError } = useQuery({
     queryKey: ['clients-with-providers', user?.id],
     queryFn: async () => {
       if (!user?.id) return [];
@@ -89,8 +89,8 @@ const Dashboard = () => {
     enabled: !!user?.id,
   });
 
-  // Check if user is a provider - only if they don't have any client records
-  const { data: provider, isLoading: providerLoading } = useQuery({
+  // Check if user is a provider - only query when we know they don't have client records
+  const { data: provider, isLoading: providerLoading, error: providerError } = useQuery({
     queryKey: ['provider', user?.id],
     queryFn: async () => {
       if (!user?.id) return null;
@@ -112,7 +112,7 @@ const Dashboard = () => {
         return null;
       }
     },
-    enabled: !!user?.id && allClientRecords.length === 0,
+    enabled: !!user?.id && !clientLoading && allClientRecords.length === 0,
   });
 
   // Check if current user is already connected to the current provider
@@ -137,13 +137,29 @@ const Dashboard = () => {
   }, [providerSlug, isDemoClient, user]);
 
   // Show loading only when we're actually loading and user exists
-  if (user && (clientLoading || (allClientRecords.length === 0 && providerLoading))) {
+  if (user && clientLoading) {
+    console.log('Dashboard - Loading clients...');
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
       </div>
     );
   }
+
+  // Show loading for provider query only if we need to check for provider and it's loading
+  if (user && !clientLoading && allClientRecords.length === 0 && providerLoading) {
+    console.log('Dashboard - Loading provider...');
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  // If there are any errors, log them but don't block the UI
+  if (clientError) console.error('Client error:', clientError);
+  if (clientsWithProvidersError) console.error('Clients with providers error:', clientsWithProvidersError);
+  if (providerError) console.error('Provider error:', providerError);
 
   const connectedToCurrentProvider = isConnectedToCurrentProvider();
   const hasAnyClientRecords = allClientRecords.length > 0;
@@ -155,6 +171,8 @@ const Dashboard = () => {
   console.log('  showLandingPage:', showLandingPage);
   console.log('  isConnectedToCurrentProvider:', connectedToCurrentProvider);
   console.log('  hasAnyClientRecords:', hasAnyClientRecords);
+  console.log('  clientLoading:', clientLoading);
+  console.log('  providerLoading:', providerLoading);
 
   return (
     <AuthGuard>
