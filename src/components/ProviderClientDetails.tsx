@@ -95,15 +95,11 @@ export const ProviderClientDetails = ({ client, provider, onBack }: ProviderClie
           </TabsContent>
 
           <TabsContent value="messages">
-            <ChatInterface userType="provider" userId={provider.id} />
+            <ChatInterface providerId={provider.id} clientId={client.id} />
           </TabsContent>
 
           <TabsContent value="documents">
-            <DocumentsManagement 
-              userType="provider" 
-              userId={provider.id} 
-              targetClientId={client.id}
-            />
+            <DocumentsManagement providerId={provider.id} />
           </TabsContent>
         </Tabs>
       </div>

@@ -150,11 +150,11 @@ export const ClientProviderDetails = ({ provider, client, onBack }: ClientProvid
           </TabsContent>
 
           <TabsContent value="messages">
-            <ChatInterface userType="client" userId={client.id} />
+            <ChatInterface providerId={provider.id} clientId={client.id} />
           </TabsContent>
 
           <TabsContent value="documents">
-            <DocumentsManagement userType="client" userId={client.id} />
+            <DocumentsManagement providerId={provider.id} />
           </TabsContent>
         </Tabs>
       </div>
