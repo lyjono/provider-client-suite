@@ -635,6 +635,10 @@ export type Database = {
         Args: { first_name: string; last_name: string; company_name: string }
         Returns: string
       }
+      generate_video_room_id: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
     }
     Enums: {
       appointment_status: "pending" | "confirmed" | "completed" | "cancelled"
