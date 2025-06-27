@@ -23,8 +23,11 @@ const Dashboard = () => {
   console.log('Dashboard - providerSlug:', providerSlug);
   console.log('Dashboard - isDemoClient:', isDemoClient);
 
+  // Only fetch data if user is authenticated
+  const shouldFetchData = !!user?.id;
+
   // Get all client records for this user
-  const { data: allClientRecords = [], isLoading: clientLoading } = useQuery({
+  const { data: allClientRecords = [], isLoading: clientLoading, error: clientError } = useQuery({
     queryKey: ['all-clients', user?.id],
     queryFn: async () => {
       if (!user?.id) return [];
@@ -44,11 +47,13 @@ const Dashboard = () => {
       console.log('All client records found:', clientData?.length || 0);
       return clientData || [];
     },
-    enabled: !!user?.id,
+    enabled: shouldFetchData,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    refetchOnWindowFocus: false,
   });
 
   // Get client records with provider info
-  const { data: clientsWithProviders = [] } = useQuery({
+  const { data: clientsWithProviders = [], isLoading: clientsWithProvidersLoading } = useQuery({
     queryKey: ['clients-with-providers', user?.id],
     queryFn: async () => {
       if (!user?.id) return [];
@@ -82,10 +87,15 @@ const Dashboard = () => {
       console.log('Clients with providers found:', clientData?.length || 0);
       return clientData || [];
     },
-    enabled: !!user?.id,
+    enabled: shouldFetchData,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    refetchOnWindowFocus: false,
   });
 
   // Check if user is a provider - only when they don't have client records
+  const hasAnyClientRecords = allClientRecords.length > 0;
+  const shouldFetchProvider = shouldFetchData && !clientLoading && !hasAnyClientRecords;
+
   const { data: provider, isLoading: providerLoading } = useQuery({
     queryKey: ['provider', user?.id],
     queryFn: async () => {
@@ -96,18 +106,20 @@ const Dashboard = () => {
       const { data, error } = await supabase
         .from('providers')
         .select('*')
-        .eq('user_id', user.id);
+        .eq('user_id', user.id)
+        .maybeSingle();
       
       if (error) {
         console.error('Provider query error:', error);
         throw error;
       }
       
-      const providerData = data && data.length > 0 ? data[0] : null;
-      console.log('Provider found:', !!providerData);
-      return providerData;
+      console.log('Provider found:', !!data);
+      return data;
     },
-    enabled: !!user?.id && !clientLoading && allClientRecords.length === 0,
+    enabled: shouldFetchProvider,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    refetchOnWindowFocus: false,
   });
 
   // Check if current user is already connected to the current provider
@@ -125,8 +137,10 @@ const Dashboard = () => {
     }
   }, [providerSlug, isDemoClient, user]);
 
-  // Show loading only when we're actually loading and user exists
-  if (user && (clientLoading || (allClientRecords.length === 0 && providerLoading))) {
+  // Show loading only when we're actually loading and have a user
+  const isLoading = user && (clientLoading || clientsWithProvidersLoading || (shouldFetchProvider && providerLoading));
+
+  if (isLoading) {
     console.log('Dashboard - Loading...');
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -135,8 +149,20 @@ const Dashboard = () => {
     );
   }
 
+  // Handle errors
+  if (clientError) {
+    console.error('Dashboard - Client error:', clientError);
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-red-600 mb-4">Error Loading Dashboard</h1>
+          <p className="text-gray-600">Please try refreshing the page.</p>
+        </div>
+      </div>
+    );
+  }
+
   const connectedToCurrentProvider = isConnectedToCurrentProvider();
-  const hasAnyClientRecords = allClientRecords.length > 0;
 
   console.log('Dashboard - Final state:');
   console.log('  allClientRecords:', allClientRecords.length);
@@ -183,12 +209,12 @@ const Dashboard = () => {
         )}
         
         {/* Provider onboarding flow - for users without provider slug who are not clients */}
-        {!isDemoClient && !providerSlug && !provider && !hasAnyClientRecords && (
+        {!isDemoClient && !providerSlug && !provider && !hasAnyClientRecords && user && (
           <ProviderOnboarding />
         )}
         
         {/* Provider dashboard - only for users who are providers and didn't come through provider link */}
-        {!isDemoClient && !providerSlug && provider && (
+        {!isDemoClient && !providerSlug && provider && user && (
           <ProviderDashboard provider={provider} />
         )}
       </div>

@@ -29,9 +29,9 @@ export const useSubscription = () => {
         .from('subscribers')
         .select('*')
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
       
-      if (error && error.code !== 'PGRST116') {
+      if (error) {
         console.error('Error fetching subscription:', error);
         return null;
       }
@@ -39,6 +39,8 @@ export const useSubscription = () => {
       return data;
     },
     enabled: !!user?.id,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    refetchOnWindowFocus: false,
   });
 
   // Function to check subscription status with Stripe and refresh local data
@@ -124,11 +126,16 @@ export const useSubscription = () => {
     }
   }, [user, session]);
 
-  // Listen for window focus to refresh subscription status
+  // Listen for window focus to refresh subscription status - but with throttling
   useEffect(() => {
+    let lastFocusCheck = 0;
+    const FOCUS_CHECK_THROTTLE = 30000; // 30 seconds
+
     const handleFocus = () => {
-      if (user && session) {
+      const now = Date.now();
+      if (now - lastFocusCheck > FOCUS_CHECK_THROTTLE && user && session) {
         console.log('Window focused, checking subscription status...');
+        lastFocusCheck = now;
         checkSubscription();
       }
     };
