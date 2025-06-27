@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -39,15 +39,18 @@ export const useSubscription = () => {
       return data;
     },
     enabled: !!user?.id,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 30 * 60 * 1000, // 30 minutes - much longer stale time
     refetchOnWindowFocus: false,
+    refetchOnMount: true,
+    refetchInterval: false, // Disable automatic refetching
   });
 
   // Function to check subscription status with Stripe and refresh local data
-  const checkSubscription = async () => {
+  const checkSubscription = useCallback(async () => {
     if (!session?.access_token) return;
 
     try {
+      console.log('Checking subscription status...');
       const { data, error } = await supabase.functions.invoke('check-subscription', {
         headers: {
           Authorization: `Bearer ${session.access_token}`,
@@ -68,12 +71,12 @@ export const useSubscription = () => {
       await refetch();
       
       // Also invalidate and refetch provider data if it exists
-      queryClient.invalidateQueries({ queryKey: ['provider'] });
+      queryClient.invalidateQueries({ queryKey: ['user-dashboard-data'] });
 
     } catch (error) {
       console.error('Error checking subscription:', error);
     }
-  };
+  }, [session?.access_token, refetch, queryClient]);
 
   // Function to create checkout session
   const createCheckoutSession = async (tier: 'starter' | 'pro') => {
@@ -119,17 +122,21 @@ export const useSubscription = () => {
     }
   }, [dbSubscription]);
 
-  // Check subscription on mount and when user changes
+  // Check subscription on mount and when user changes - but only once
   useEffect(() => {
     if (user && session) {
-      checkSubscription();
+      const hasChecked = sessionStorage.getItem(`subscription-checked-${user.id}`);
+      if (!hasChecked) {
+        checkSubscription();
+        sessionStorage.setItem(`subscription-checked-${user.id}`, 'true');
+      }
     }
-  }, [user, session]);
+  }, [user?.id, session, checkSubscription]);
 
-  // Listen for window focus to refresh subscription status - but with throttling
+  // Listen for window focus to refresh subscription status - but with much longer throttling
   useEffect(() => {
     let lastFocusCheck = 0;
-    const FOCUS_CHECK_THROTTLE = 30000; // 30 seconds
+    const FOCUS_CHECK_THROTTLE = 5 * 60 * 1000; // 5 minutes instead of 30 seconds
 
     const handleFocus = () => {
       const now = Date.now();
@@ -142,7 +149,7 @@ export const useSubscription = () => {
 
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
-  }, [user, session]);
+  }, [user, session, checkSubscription]);
 
   return {
     ...subscriptionData,

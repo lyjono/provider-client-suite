@@ -23,22 +23,30 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('Auth state changed:', event, session);
+        console.log('Auth state changed:', event, session?.user?.id ? 'User logged in' : 'No user');
         setSession(session);
         setUser(session?.user ?? null);
         setLoading(false);
         
-        // Check subscription status when user logs in
+        // Clear the subscription check flag when user changes
+        if (event === 'SIGNED_OUT') {
+          sessionStorage.clear();
+        }
+        
+        // Check subscription status when user logs in - but defer it
         if (event === 'SIGNED_IN' && session?.access_token) {
-          try {
-            await supabase.functions.invoke('check-subscription', {
-              headers: {
-                Authorization: `Bearer ${session.access_token}`,
-              },
-            });
-          } catch (error) {
-            console.log('Error checking subscription on login:', error);
-          }
+          // Defer subscription check to prevent auth loops
+          setTimeout(async () => {
+            try {
+              await supabase.functions.invoke('check-subscription', {
+                headers: {
+                  Authorization: `Bearer ${session.access_token}`,
+                },
+              });
+            } catch (error) {
+              console.log('Error checking subscription on login:', error);
+            }
+          }, 2000); // 2 second delay
         }
       }
     );
@@ -74,6 +82,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const signOut = async () => {
+    sessionStorage.clear(); // Clear all session storage
     await supabase.auth.signOut();
   };
 
