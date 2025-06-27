@@ -55,8 +55,6 @@ serve(async (req) => {
     // Find existing customer
     const customers = await stripe.customers.list({ email: user.email, limit: 1 });
     let customerId;
-    let hasActiveSubscription = false;
-    let activeSubscriptionId = null;
 
     if (customers.data.length > 0) {
       customerId = customers.data[0].id;
@@ -73,25 +71,16 @@ serve(async (req) => {
       const activeSubscriptions = subscriptions.data.filter(sub => !sub.cancel_at_period_end);
       
       if (activeSubscriptions.length > 0) {
-        hasActiveSubscription = true;
-        activeSubscriptionId = activeSubscriptions[0].id;
-        logStep("Found active subscription", { subscriptionId: activeSubscriptionId });
+        logStep("Found active subscriptions - canceling them before creating new one", { 
+          count: activeSubscriptions.length,
+          subscriptionIds: activeSubscriptions.map(s => s.id)
+        });
 
-        // If user has an active subscription, redirect to customer portal for changes
-        const origin = req.headers.get("origin") || "http://localhost:3000";
-        const portalSession = await stripe.billingPortal.sessions.create({
-          customer: customerId,
-          return_url: `${origin}/dashboard`,
-        });
-        
-        logStep("Redirecting to customer portal for subscription changes");
-        return new Response(JSON.stringify({ 
-          url: portalSession.url,
-          message: "You already have an active subscription. Use the customer portal to make changes."
-        }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: 200,
-        });
+        // Cancel all existing active subscriptions immediately
+        for (const subscription of activeSubscriptions) {
+          await stripe.subscriptions.cancel(subscription.id);
+          logStep("Canceled subscription", { subscriptionId: subscription.id });
+        }
       }
     } else {
       // Create new customer if none exists
