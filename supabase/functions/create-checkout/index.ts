@@ -142,10 +142,20 @@ serve(async (req) => {
         });
 
       } else if (newAmount < currentAmount) {
-        // Downgrade: Schedule change for end of current period
-        logStep("Processing downgrade - scheduling for end of period");
+        // Downgrade: Cancel at end of period and schedule new subscription
+        logStep("Processing downgrade - will cancel current and create new subscription at period end");
         
-        // Create new price for the subscription
+        // Cancel current subscription at period end
+        await stripe.subscriptions.update(currentSubscription.id, {
+          cancel_at_period_end: true,
+          metadata: {
+            ...currentSubscription.metadata,
+            downgrade_scheduled: 'true',
+            new_tier: tier
+          }
+        });
+
+        // Create new price for the future subscription
         const newPrice = await stripe.prices.create({
           currency: "usd",
           unit_amount: selectedPlan.amount,
@@ -156,7 +166,7 @@ serve(async (req) => {
           }
         });
 
-        // Use schedule to change subscription at period end
+        // Create a scheduled subscription to start when current ends
         await stripe.subscriptionSchedules.create({
           customer: customerId,
           start_date: currentSubscription.current_period_end,
@@ -165,11 +175,7 @@ serve(async (req) => {
             items: [{
               price: newPrice.id,
               quantity: 1
-            }],
-            metadata: {
-              user_id: user.id,
-              tier: tier
-            }
+            }]
           }],
           metadata: {
             user_id: user.id,
@@ -183,7 +189,7 @@ serve(async (req) => {
         
         return new Response(JSON.stringify({ 
           success: true, 
-          message: `Subscription will change to ${selectedPlan.name} on ${periodEnd.toDateString()}. You'll continue to enjoy your current plan until then.` 
+          message: `Your current plan will end on ${periodEnd.toDateString()} and you'll be switched to ${selectedPlan.name}. You'll continue to enjoy your current plan until then.` 
         }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
           status: 200,
