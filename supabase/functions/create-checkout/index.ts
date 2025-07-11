@@ -198,40 +198,43 @@ serve(async (req) => {
         });
 
       } else {
-        // DOWNGRADE: Schedule change at period end using subscription schedules
-        logStep("Processing downgrade - scheduling change at period end");
+        // DOWNGRADE: Cancel current subscription at period end and create new one
+        logStep("Processing downgrade - canceling current and scheduling new");
         
-        // Create a subscription schedule to handle the downgrade
-        const subscriptionSchedule = await stripe.subscriptionSchedules.create({
-          from_subscription: currentSubscription.id,
-          phases: [
-            {
-              // Current phase - keep existing subscription until period end
-              items: [{
-                price: currentPrice.id,
-                quantity: 1
-              }],
-              end_date: currentSubscription.current_period_end
-            },
-            {
-              // New phase - start the downgraded plan
-              items: [{
-                price: newPrice.id,
-                quantity: 1
-              }]
-            }
-          ],
+        // Cancel current subscription at period end
+        await stripe.subscriptions.update(currentSubscription.id, {
+          cancel_at_period_end: true,
           metadata: {
-            user_id: user.id,
+            ...currentSubscription.metadata,
             downgrade_scheduled: 'true',
             new_tier: tier,
             downgrade_initiated_at: new Date().toISOString()
           }
         });
 
+        // Create a new subscription schedule to start when current ends
+        const subscriptionSchedule = await stripe.subscriptionSchedules.create({
+          customer: customerId!,
+          start_date: currentSubscription.current_period_end,
+          end_behavior: 'release',
+          phases: [{
+            items: [{
+              price: newPrice.id,
+              quantity: 1
+            }]
+          }],
+          metadata: {
+            user_id: user.id,
+            tier: tier,
+            downgrade_from: currentSubscription.id,
+            scheduled_at: new Date().toISOString()
+          }
+        });
+
         const periodEnd = new Date(currentSubscription.current_period_end * 1000);
         logStep("Subscription downgrade scheduled", { 
-          scheduleId: subscriptionSchedule.id,
+          canceledSubscription: currentSubscription.id,
+          newScheduleId: subscriptionSchedule.id,
           effectiveDate: periodEnd 
         });
         
