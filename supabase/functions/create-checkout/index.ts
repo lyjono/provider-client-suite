@@ -198,101 +198,35 @@ serve(async (req) => {
         });
 
       } else {
-        // DOWNGRADE: Use subscription schedule to change plan at period end
-        logStep("Processing downgrade - scheduling plan change at period end");
+        // DOWNGRADE: Update subscription to change at end of billing cycle
+        logStep("Processing downgrade - updating subscription for end of cycle change");
         
-        let subscriptionSchedule;
-        
-        try {
-          // Try to create a subscription schedule from the existing subscription
-          logStep("Attempting to create new subscription schedule");
-          subscriptionSchedule = await stripe.subscriptionSchedules.create({
-            from_subscription: currentSubscription.id,
-            phases: [
-              {
-                // Keep current subscription until period end
-                items: [{
-                  price: currentPrice.id,
-                  quantity: 1
-                }],
-                end_date: currentSubscription.current_period_end
-              },
-              {
-                // New phase with downgraded pricing starting at period end
-                items: [{
-                  price: newPrice.id,
-                  quantity: 1
-                }]
-              }
-            ],
-            metadata: {
-              user_id: user.id,
-              downgrade_scheduled: 'true',
-              new_tier: tier,
-              downgrade_initiated_at: new Date().toISOString()
-            }
-          });
-          
-        } catch (scheduleError: any) {
-          if (scheduleError.message?.includes('already attached to a schedule')) {
-            // Find existing schedule for this customer and subscription
-            logStep("Subscription already has schedule, finding and updating it");
-            
-            const customerSchedules = await stripe.subscriptionSchedules.list({
-              customer: customerId!,
-              limit: 10
-            });
-            
-            // Find the schedule that matches our subscription
-            const existingSchedule = customerSchedules.data.find(schedule => 
-              schedule.subscription === currentSubscription.id
-            );
-            
-            if (existingSchedule) {
-              logStep("Found existing schedule, updating it", { scheduleId: existingSchedule.id });
-              
-              subscriptionSchedule = await stripe.subscriptionSchedules.update(existingSchedule.id, {
-                phases: [
-                  {
-                    // Keep current subscription until period end
-                    items: [{
-                      price: currentPrice.id,
-                      quantity: 1
-                    }],
-                    end_date: currentSubscription.current_period_end
-                  },
-                  {
-                    // New phase with downgraded pricing starting at period end
-                    items: [{
-                      price: newPrice.id,
-                      quantity: 1
-                    }]
-                  }
-                ],
-                metadata: {
-                  user_id: user.id,
-                  downgrade_scheduled: 'true',
-                  new_tier: tier,
-                  downgrade_initiated_at: new Date().toISOString()
-                }
-              });
-            } else {
-              throw new Error("Could not find existing subscription schedule");
-            }
-          } else {
-            throw scheduleError;
+        // Update the subscription with new price, effective at end of current period
+        const updatedSubscription = await stripe.subscriptions.update(currentSubscription.id, {
+          items: [{
+            id: currentSubscription.items.data[0].id,
+            price: newPrice.id,
+          }],
+          proration_behavior: 'none', // No immediate charge for downgrades
+          billing_cycle_anchor: 'unchanged', // Keep current billing cycle
+          metadata: {
+            ...currentSubscription.metadata,
+            downgrade_scheduled: 'true',
+            new_tier: tier,
+            downgrade_initiated_at: new Date().toISOString()
           }
-        }
+        });
 
         const periodEnd = new Date(currentSubscription.current_period_end * 1000);
-        logStep("Subscription downgrade scheduled", { 
-          scheduleId: subscriptionSchedule.id,
+        logStep("Subscription downgrade completed", { 
+          subscriptionId: updatedSubscription.id,
+          newPrice: newPrice.id,
           effectiveDate: periodEnd 
         });
         
         return new Response(JSON.stringify({ 
           success: true, 
-          message: `Your current plan will continue until ${periodEnd.toDateString()}, then you'll switch to the ${targetPlan.name}. You'll keep all current benefits until then.` 
+          message: `Your plan will switch to ${targetPlan.name} at your next billing cycle on ${periodEnd.toDateString()}. You'll keep all current benefits until then.` 
         }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
           status: 200,
