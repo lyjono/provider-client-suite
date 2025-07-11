@@ -201,37 +201,72 @@ serve(async (req) => {
         // DOWNGRADE: Use subscription schedule to change plan at period end
         logStep("Processing downgrade - scheduling plan change at period end");
         
-        // Create a subscription schedule from the existing subscription
-        const subscriptionSchedule = await stripe.subscriptionSchedules.create({
-          from_subscription: currentSubscription.id,
+        // Check if subscription already has a schedule
+        const existingSchedules = await stripe.subscriptionSchedules.list({
+          subscription: currentSubscription.id,
+          limit: 1
         });
 
-        // Update the schedule to add the downgrade phase
-        await stripe.subscriptionSchedules.update(subscriptionSchedule.id, {
-          phases: [
-            {
-              // Keep current subscription until period end
-              items: [{
-                price: currentPrice.id,
-                quantity: 1
-              }],
-              end_date: currentSubscription.current_period_end
-            },
-            {
-              // New phase with downgraded pricing starting at period end
-              items: [{
-                price: newPrice.id,
-                quantity: 1
-              }]
+        let subscriptionSchedule;
+        
+        if (existingSchedules.data.length > 0) {
+          // Update existing schedule
+          logStep("Updating existing subscription schedule");
+          subscriptionSchedule = await stripe.subscriptionSchedules.update(existingSchedules.data[0].id, {
+            phases: [
+              {
+                // Keep current subscription until period end
+                items: [{
+                  price: currentPrice.id,
+                  quantity: 1
+                }],
+                end_date: currentSubscription.current_period_end
+              },
+              {
+                // New phase with downgraded pricing starting at period end
+                items: [{
+                  price: newPrice.id,
+                  quantity: 1
+                }]
+              }
+            ],
+            metadata: {
+              user_id: user.id,
+              downgrade_scheduled: 'true',
+              new_tier: tier,
+              downgrade_initiated_at: new Date().toISOString()
             }
-          ],
-          metadata: {
-            user_id: user.id,
-            downgrade_scheduled: 'true',
-            new_tier: tier,
-            downgrade_initiated_at: new Date().toISOString()
-          }
-        });
+          });
+        } else {
+          // Create a new subscription schedule from the existing subscription
+          logStep("Creating new subscription schedule");
+          subscriptionSchedule = await stripe.subscriptionSchedules.create({
+            from_subscription: currentSubscription.id,
+            phases: [
+              {
+                // Keep current subscription until period end
+                items: [{
+                  price: currentPrice.id,
+                  quantity: 1
+                }],
+                end_date: currentSubscription.current_period_end
+              },
+              {
+                // New phase with downgraded pricing starting at period end
+                items: [{
+                  price: newPrice.id,
+                  quantity: 1
+                }]
+              }
+            ],
+            metadata: {
+              user_id: user.id,
+              downgrade_scheduled: 'true',
+              new_tier: tier,
+              downgrade_initiated_at: new Date().toISOString()
+            }
+          });
+        }
 
         const periodEnd = new Date(currentSubscription.current_period_end * 1000);
         logStep("Subscription downgrade scheduled", { 
