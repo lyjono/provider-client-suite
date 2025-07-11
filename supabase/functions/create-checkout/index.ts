@@ -55,6 +55,7 @@ serve(async (req) => {
     // Find existing customer
     const customers = await stripe.customers.list({ email: user.email, limit: 1 });
     let customerId;
+    let activeSubscriptions: any[] = [];
 
     if (customers.data.length > 0) {
       customerId = customers.data[0].id;
@@ -68,20 +69,7 @@ serve(async (req) => {
       });
 
       // Filter out subscriptions that are marked for cancellation
-      const activeSubscriptions = subscriptions.data.filter(sub => !sub.cancel_at_period_end);
-      
-      if (activeSubscriptions.length > 0) {
-        logStep("Found active subscriptions - canceling them before creating new one", { 
-          count: activeSubscriptions.length,
-          subscriptionIds: activeSubscriptions.map(s => s.id)
-        });
-
-        // Cancel all existing active subscriptions immediately
-        for (const subscription of activeSubscriptions) {
-          await stripe.subscriptions.cancel(subscription.id);
-          logStep("Canceled subscription", { subscriptionId: subscription.id });
-        }
-      }
+      activeSubscriptions = subscriptions.data.filter(sub => !sub.cancel_at_period_end);
     } else {
       // Create new customer if none exists
       const customer = await stripe.customers.create({
@@ -92,7 +80,7 @@ serve(async (req) => {
       logStep("Created new customer", { customerId });
     }
 
-    // Set up pricing based on tier
+    // Set up pricing based on tier - create actual Stripe prices for better management
     const priceMapping = {
       starter: { amount: 2999, name: "Starter Plan" }, // $29.99
       pro: { amount: 7999, name: "Pro Plan" } // $79.99
@@ -103,7 +91,111 @@ serve(async (req) => {
 
     const origin = req.headers.get("origin") || "http://localhost:3000";
 
-    // Create checkout session for new subscription
+    // If user has active subscriptions, modify the existing subscription instead of creating new one
+    if (activeSubscriptions.length > 0) {
+      const currentSubscription = activeSubscriptions[0];
+      const currentPrice = currentSubscription.items.data[0].price;
+      const currentAmount = currentPrice.unit_amount || 0;
+      const newAmount = selectedPlan.amount;
+
+      logStep("Modifying existing subscription", { 
+        currentAmount, 
+        newAmount, 
+        subscriptionId: currentSubscription.id 
+      });
+
+      if (newAmount > currentAmount) {
+        // Upgrade: Immediate change with proration
+        logStep("Processing upgrade with immediate proration");
+        
+        // Create new price for the subscription
+        const newPrice = await stripe.prices.create({
+          currency: "usd",
+          unit_amount: selectedPlan.amount,
+          recurring: { interval: "month" },
+          product_data: {
+            name: selectedPlan.name,
+            description: `${tier} subscription plan`
+          }
+        });
+
+        // Update subscription immediately with proration
+        await stripe.subscriptions.update(currentSubscription.id, {
+          items: [{
+            id: currentSubscription.items.data[0].id,
+            price: newPrice.id,
+          }],
+          proration_behavior: 'always_invoice', // Bill immediately for the difference
+          metadata: {
+            user_id: user.id,
+            tier: tier
+          }
+        });
+
+        logStep("Subscription upgraded successfully");
+        return new Response(JSON.stringify({ 
+          success: true, 
+          message: "Subscription upgraded successfully with prorated billing" 
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        });
+
+      } else if (newAmount < currentAmount) {
+        // Downgrade: Schedule change for end of current period
+        logStep("Processing downgrade - scheduling for end of period");
+        
+        // Create new price for the subscription
+        const newPrice = await stripe.prices.create({
+          currency: "usd",
+          unit_amount: selectedPlan.amount,
+          recurring: { interval: "month" },
+          product_data: {
+            name: selectedPlan.name,
+            description: `${tier} subscription plan`
+          }
+        });
+
+        // Schedule the subscription change for the end of the current period
+        await stripe.subscriptions.update(currentSubscription.id, {
+          items: [{
+            id: currentSubscription.items.data[0].id,
+            price: newPrice.id,
+          }],
+          proration_behavior: 'none', // No immediate charge
+          billing_cycle_anchor: 'unchanged', // Keep current billing cycle
+          metadata: {
+            user_id: user.id,
+            tier: tier
+          }
+        });
+
+        const periodEnd = new Date(currentSubscription.current_period_end * 1000);
+        logStep("Subscription downgrade scheduled", { effectiveDate: periodEnd });
+        
+        return new Response(JSON.stringify({ 
+          success: true, 
+          message: `Subscription will change to ${selectedPlan.name} on ${periodEnd.toDateString()}. You'll continue to enjoy your current plan until then.` 
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        });
+
+      } else {
+        // Same tier - no change needed
+        logStep("User already has this subscription tier");
+        return new Response(JSON.stringify({ 
+          success: true, 
+          message: "You're already subscribed to this plan" 
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        });
+      }
+    }
+
+    // No active subscription - create new checkout session
+    logStep("Creating new subscription checkout session");
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
       line_items: [
