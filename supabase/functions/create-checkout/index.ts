@@ -201,45 +201,11 @@ serve(async (req) => {
         // DOWNGRADE: Use subscription schedule to change plan at period end
         logStep("Processing downgrade - scheduling plan change at period end");
         
-        // Check if subscription already has a schedule
-        const existingSchedules = await stripe.subscriptionSchedules.list({
-          subscription: currentSubscription.id,
-          limit: 1
-        });
-
         let subscriptionSchedule;
         
-        if (existingSchedules.data.length > 0) {
-          // Update existing schedule
-          logStep("Updating existing subscription schedule");
-          subscriptionSchedule = await stripe.subscriptionSchedules.update(existingSchedules.data[0].id, {
-            phases: [
-              {
-                // Keep current subscription until period end
-                items: [{
-                  price: currentPrice.id,
-                  quantity: 1
-                }],
-                end_date: currentSubscription.current_period_end
-              },
-              {
-                // New phase with downgraded pricing starting at period end
-                items: [{
-                  price: newPrice.id,
-                  quantity: 1
-                }]
-              }
-            ],
-            metadata: {
-              user_id: user.id,
-              downgrade_scheduled: 'true',
-              new_tier: tier,
-              downgrade_initiated_at: new Date().toISOString()
-            }
-          });
-        } else {
-          // Create a new subscription schedule from the existing subscription
-          logStep("Creating new subscription schedule");
+        try {
+          // Try to create a subscription schedule from the existing subscription
+          logStep("Attempting to create new subscription schedule");
           subscriptionSchedule = await stripe.subscriptionSchedules.create({
             from_subscription: currentSubscription.id,
             phases: [
@@ -266,6 +232,56 @@ serve(async (req) => {
               downgrade_initiated_at: new Date().toISOString()
             }
           });
+          
+        } catch (scheduleError: any) {
+          if (scheduleError.message?.includes('already attached to a schedule')) {
+            // Find existing schedule for this customer and subscription
+            logStep("Subscription already has schedule, finding and updating it");
+            
+            const customerSchedules = await stripe.subscriptionSchedules.list({
+              customer: customerId!,
+              limit: 10
+            });
+            
+            // Find the schedule that matches our subscription
+            const existingSchedule = customerSchedules.data.find(schedule => 
+              schedule.subscription === currentSubscription.id
+            );
+            
+            if (existingSchedule) {
+              logStep("Found existing schedule, updating it", { scheduleId: existingSchedule.id });
+              
+              subscriptionSchedule = await stripe.subscriptionSchedules.update(existingSchedule.id, {
+                phases: [
+                  {
+                    // Keep current subscription until period end
+                    items: [{
+                      price: currentPrice.id,
+                      quantity: 1
+                    }],
+                    end_date: currentSubscription.current_period_end
+                  },
+                  {
+                    // New phase with downgraded pricing starting at period end
+                    items: [{
+                      price: newPrice.id,
+                      quantity: 1
+                    }]
+                  }
+                ],
+                metadata: {
+                  user_id: user.id,
+                  downgrade_scheduled: 'true',
+                  new_tier: tier,
+                  downgrade_initiated_at: new Date().toISOString()
+                }
+              });
+            } else {
+              throw new Error("Could not find existing subscription schedule");
+            }
+          } else {
+            throw scheduleError;
+          }
         }
 
         const periodEnd = new Date(currentSubscription.current_period_end * 1000);
