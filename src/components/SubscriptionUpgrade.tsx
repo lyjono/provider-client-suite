@@ -49,13 +49,22 @@ export const SubscriptionUpgrade = ({ currentTier, onUpgrade }: SubscriptionUpgr
   const handleUpgradeClick = async (tier: 'starter' | 'pro') => {
     try {
       setLoading(tier);
-      await createCheckoutSession(tier);
-      onUpgrade(tier);
+      const result = await createCheckoutSession(tier);
       
-      toast({
-        title: "Redirecting to Stripe",
-        description: "You're being redirected to complete your subscription upgrade.",
-      });
+      // If we got a message back (immediate upgrade/downgrade), show it
+      if (result) {
+        toast({
+          title: "Subscription Updated",
+          description: result,
+        });
+        onUpgrade(tier);
+      } else {
+        // For new subscriptions that redirect to Stripe
+        toast({
+          title: "Redirecting to Stripe",
+          description: "You're being redirected to complete your subscription upgrade.",
+        });
+      }
       
       setTimeout(() => {
         setLoading(null);

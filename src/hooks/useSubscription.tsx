@@ -78,7 +78,6 @@ export const useSubscription = () => {
     }
   }, [session?.access_token, refetch, queryClient]);
 
-  // Function to create checkout session
   const createCheckoutSession = async (tier: 'starter' | 'pro') => {
     if (!session?.access_token) throw new Error('Not authenticated');
 
@@ -91,8 +90,15 @@ export const useSubscription = () => {
 
     if (error) throw error;
 
-    // Open Stripe checkout in a new tab
-    window.open(data.url, '_blank');
+    // Check if we got a URL (new subscription) or success message (upgrade/downgrade)
+    if (data.url) {
+      // Open Stripe checkout in a new tab for new subscriptions
+      window.open(data.url, '_blank');
+    } else if (data.success) {
+      // For immediate upgrades/downgrades, just refresh the subscription status
+      await checkSubscription();
+      return data.message || 'Subscription updated successfully';
+    }
   };
 
   // Function to open customer portal
