@@ -114,8 +114,7 @@ serve(async (req) => {
           unit_amount: selectedPlan.amount,
           recurring: { interval: "month" },
           product_data: {
-            name: selectedPlan.name,
-            description: `${tier} subscription plan`
+            name: selectedPlan.name
           }
         });
 
@@ -161,8 +160,7 @@ serve(async (req) => {
           unit_amount: selectedPlan.amount,
           recurring: { interval: "month" },
           product_data: {
-            name: selectedPlan.name,
-            description: `${tier} subscription plan`
+            name: selectedPlan.name
           }
         });
 
@@ -217,8 +215,7 @@ serve(async (req) => {
           price_data: {
             currency: "usd",
             product_data: {
-              name: selectedPlan.name,
-              description: `${tier} subscription plan`
+              name: selectedPlan.name
             },
             unit_amount: selectedPlan.amount,
             recurring: { interval: "month" },
