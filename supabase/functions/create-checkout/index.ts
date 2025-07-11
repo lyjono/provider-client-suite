@@ -198,12 +198,17 @@ serve(async (req) => {
         });
 
       } else {
-        // DOWNGRADE: Cancel current and schedule new at period end
-        logStep("Processing downgrade - scheduling at period end");
+        // DOWNGRADE: Schedule change at period end
+        logStep("Processing downgrade - scheduling change at period end");
         
-        // Cancel current subscription at period end
+        // Update subscription to change at period end
         await stripe.subscriptions.update(currentSubscription.id, {
-          cancel_at_period_end: true,
+          items: [{
+            id: currentSubscription.items.data[0].id,
+            price: newPrice.id,
+          }],
+          proration_behavior: 'none', // No immediate charge for downgrades
+          billing_cycle_anchor: currentSubscription.current_period_end, // Change at next billing cycle
           metadata: {
             ...currentSubscription.metadata,
             downgrade_scheduled: 'true',
@@ -212,31 +217,12 @@ serve(async (req) => {
           }
         });
 
-        // Create scheduled subscription to start when current ends
-        await stripe.subscriptionSchedules.create({
-          customer: customerId!,
-          start_date: currentSubscription.current_period_end,
-          end_behavior: 'release',
-          phases: [{
-            items: [{
-              price: newPrice.id,
-              quantity: 1
-            }]
-          }],
-          metadata: {
-            user_id: user.id,
-            tier: tier,
-            downgrade_from: currentSubscription.id,
-            scheduled_at: new Date().toISOString()
-          }
-        });
-
         const periodEnd = new Date(currentSubscription.current_period_end * 1000);
         logStep("Subscription downgrade scheduled", { effectiveDate: periodEnd });
         
         return new Response(JSON.stringify({ 
           success: true, 
-          message: `Your current plan will end on ${periodEnd.toDateString()} and you'll switch to the ${targetPlan.name}. You'll continue to enjoy your current plan benefits until then.` 
+          message: `Your current plan will continue until ${periodEnd.toDateString()}, then you'll switch to the ${targetPlan.name}. You'll keep all current benefits until then.` 
         }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
           status: 200,
