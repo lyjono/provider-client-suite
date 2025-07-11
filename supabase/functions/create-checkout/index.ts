@@ -84,7 +84,7 @@ serve(async (req) => {
     const priceMapping = {
       starter: { amount: 2999, name: "Starter Plan" }, // $29.99
       pro: { amount: 7999, name: "Pro Plan" } // $79.99
-    };
+    } as const;
 
     const selectedPlan = priceMapping[tier as keyof typeof priceMapping];
     logStep("Selected plan", { tier, price: selectedPlan });
@@ -156,17 +156,25 @@ serve(async (req) => {
           }
         });
 
-        // Schedule the subscription change for the end of the current period
-        await stripe.subscriptions.update(currentSubscription.id, {
-          items: [{
-            id: currentSubscription.items.data[0].id,
-            price: newPrice.id,
+        // Use schedule to change subscription at period end
+        await stripe.subscriptionSchedules.create({
+          customer: customerId,
+          start_date: currentSubscription.current_period_end,
+          end_behavior: 'release',
+          phases: [{
+            items: [{
+              price: newPrice.id,
+              quantity: 1
+            }],
+            metadata: {
+              user_id: user.id,
+              tier: tier
+            }
           }],
-          proration_behavior: 'none', // No immediate charge
-          billing_cycle_anchor: 'unchanged', // Keep current billing cycle
           metadata: {
             user_id: user.id,
-            tier: tier
+            tier: tier,
+            downgrade_from: currentSubscription.id
           }
         });
 
