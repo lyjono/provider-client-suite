@@ -90,15 +90,18 @@ export const useSubscription = () => {
 
     if (error) throw error;
 
-    // Check if we got a URL (new subscription) or success message (upgrade/downgrade)
-    if (data.url) {
-      // Open Stripe checkout in a new tab for new subscriptions
+    // Handle different response types
+    if (data.url && !data.success) {
+      // New subscription - redirect to Stripe
       window.open(data.url, '_blank');
-      return null; // No message to show for redirects
+      return null;
     } else if (data.success) {
-      // For immediate upgrades/downgrades/cancellations, just refresh the subscription status
+      // Immediate change (upgrade/downgrade/cancellation)
       await checkSubscription();
       return data.message || 'Subscription updated successfully';
+    } else {
+      // Fallback case
+      throw new Error('Unexpected response from server');
     }
   };
 

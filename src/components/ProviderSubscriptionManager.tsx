@@ -16,7 +16,7 @@ export const ProviderSubscriptionManager = () => {
   const currentTier = subscription_tier || 'free';
   const isExpired = subscription_end ? new Date(subscription_end) < new Date() : false;
 
-  const handleUpgrade = (tier: 'starter' | 'pro') => {
+  const handleUpgrade = (tier: 'starter' | 'pro' | 'free') => {
     setShowUpgrade(false);
   };
 
@@ -142,13 +142,12 @@ export const ProviderSubscriptionManager = () => {
             
             {subscribed && currentTier !== 'free' && (
               <Button 
-                onClick={handleManageSubscription} 
+                onClick={() => setShowUpgrade(true)} 
                 variant="outline" 
                 className="w-full"
-                disabled={loading}
               >
                 <ArrowDown className="h-4 w-4 mr-2" />
-                {loading ? 'Opening Portal...' : 'Cancel Subscription (Downgrade to Free)'}
+                Change Plan or Cancel
               </Button>
             )}
           </div>

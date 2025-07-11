@@ -54,22 +54,25 @@ serve(async (req) => {
     
     // Find existing customer
     const customers = await stripe.customers.list({ email: user.email, limit: 1 });
-    let customerId;
-    let activeSubscriptions: any[] = [];
+    let customerId: string | null = null;
+    let activeSubscriptions: Stripe.Subscription[] = [];
 
     if (customers.data.length > 0) {
       customerId = customers.data[0].id;
       logStep("Found existing customer", { customerId });
 
-      // Check for existing active subscriptions
-      const subscriptions = await stripe.subscriptions.list({
+      // Get all subscriptions for this customer
+      const allSubscriptions = await stripe.subscriptions.list({
         customer: customerId,
-        status: "active",
         limit: 10,
       });
 
-      // Filter out subscriptions that are marked for cancellation
-      activeSubscriptions = subscriptions.data.filter(sub => !sub.cancel_at_period_end);
+      // Filter for truly active subscriptions (not canceled or canceling)
+      activeSubscriptions = allSubscriptions.data.filter(sub => 
+        sub.status === "active" && !sub.cancel_at_period_end
+      );
+
+      logStep("Active subscriptions found", { count: activeSubscriptions.length });
     } else {
       // Create new customer if none exists
       const customer = await stripe.customers.create({
@@ -80,95 +83,123 @@ serve(async (req) => {
       logStep("Created new customer", { customerId });
     }
 
-    // Set up pricing based on tier - create actual Stripe prices for better management
-    const priceMapping = {
+    // Define pricing tiers
+    const pricingTiers = {
+      free: { amount: 0, name: "Free Plan" },
       starter: { amount: 2999, name: "Starter Plan" }, // $29.99
-      pro: { amount: 7999, name: "Pro Plan" }, // $79.99
-      free: { amount: 0, name: "Free Plan" } // Free
-    } as const;
+      pro: { amount: 7999, name: "Pro Plan" } // $79.99
+    };
 
-    const selectedPlan = priceMapping[tier as keyof typeof priceMapping];
-    logStep("Selected plan", { tier, price: selectedPlan });
-
+    const targetPlan = pricingTiers[tier as keyof typeof pricingTiers];
     const origin = req.headers.get("origin") || "http://localhost:3000";
 
-    // If user has active subscriptions, modify the existing subscription instead of creating new one
-    if (activeSubscriptions.length > 0) {
-      const currentSubscription = activeSubscriptions[0];
-      const currentPrice = currentSubscription.items.data[0].price;
-      const currentAmount = currentPrice.unit_amount || 0;
-      const newAmount = selectedPlan.amount;
-
-      logStep("Modifying existing subscription", { 
-        currentAmount, 
-        newAmount, 
-        subscriptionId: currentSubscription.id 
-      });
-
-      // Handle cancellation to free tier
-      if (tier === 'free') {
-        logStep("Processing cancellation to free tier");
-        
-        // Cancel subscription at period end
-        await stripe.subscriptions.update(currentSubscription.id, {
-          cancel_at_period_end: true,
-          metadata: {
-            ...currentSubscription.metadata,
-            cancelled_to_free: 'true'
-          }
-        });
-
-        const periodEnd = new Date(currentSubscription.current_period_end * 1000);
-        logStep("Subscription cancelled, will end at period end", { effectiveDate: periodEnd });
-        
+    // CASE 1: User wants to downgrade to free
+    if (tier === 'free') {
+      if (activeSubscriptions.length === 0) {
+        logStep("User already on free tier");
         return new Response(JSON.stringify({ 
           success: true, 
-          message: `Your subscription will end on ${periodEnd.toDateString()} and you'll switch to the free plan. You'll continue to enjoy your current plan until then.` 
+          message: "You're already on the free plan" 
         }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
           status: 200,
         });
       }
 
-      if (newAmount > currentAmount) {
-        // Upgrade: Immediate change with proration
-        logStep("Processing upgrade with immediate proration");
-        
-        // Create new price for the subscription
-        const newPrice = await stripe.prices.create({
-          currency: "usd",
-          unit_amount: selectedPlan.amount,
-          recurring: { interval: "month" },
-          product_data: {
-            name: selectedPlan.name
+      // Cancel all active subscriptions at period end
+      for (const subscription of activeSubscriptions) {
+        await stripe.subscriptions.update(subscription.id, {
+          cancel_at_period_end: true,
+          metadata: {
+            ...subscription.metadata,
+            cancelled_to_free: 'true',
+            cancelled_by_user: user.id
           }
         });
 
-        // Update subscription immediately with proration
+        const periodEnd = new Date(subscription.current_period_end * 1000);
+        logStep("Subscription cancelled to free", { 
+          subscriptionId: subscription.id, 
+          effectiveDate: periodEnd 
+        });
+      }
+
+      const latestSubscription = activeSubscriptions.sort((a, b) => b.current_period_end - a.current_period_end)[0];
+      const periodEnd = new Date(latestSubscription.current_period_end * 1000);
+      
+      return new Response(JSON.stringify({ 
+        success: true, 
+        message: `Your subscription will end on ${periodEnd.toDateString()} and you'll switch to the free plan. You'll continue to enjoy your current plan benefits until then.` 
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+      });
+    }
+
+    // CASE 2: User has active subscription and wants to change tier
+    if (activeSubscriptions.length > 0) {
+      const currentSubscription = activeSubscriptions[0];
+      const currentPrice = currentSubscription.items.data[0].price;
+      const currentAmount = currentPrice.unit_amount || 0;
+      const targetAmount = targetPlan.amount;
+
+      logStep("Modifying existing subscription", { 
+        currentAmount, 
+        targetAmount, 
+        subscriptionId: currentSubscription.id 
+      });
+
+      if (targetAmount === currentAmount) {
+        logStep("Same tier requested");
+        return new Response(JSON.stringify({ 
+          success: true, 
+          message: "You're already subscribed to this plan" 
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        });
+      }
+
+      // Create new price for the target tier
+      const newPrice = await stripe.prices.create({
+        currency: "usd",
+        unit_amount: targetPlan.amount,
+        recurring: { interval: "month" },
+        product_data: {
+          name: targetPlan.name
+        }
+      });
+
+      if (targetAmount > currentAmount) {
+        // UPGRADE: Immediate change with proration
+        logStep("Processing upgrade with immediate proration");
+        
         await stripe.subscriptions.update(currentSubscription.id, {
           items: [{
             id: currentSubscription.items.data[0].id,
             price: newPrice.id,
           }],
-          proration_behavior: 'always_invoice', // Bill immediately for the difference
+          proration_behavior: 'always_invoice',
           metadata: {
             user_id: user.id,
-            tier: tier
+            tier: tier,
+            upgrade_from: currentPrice.id,
+            upgraded_at: new Date().toISOString()
           }
         });
 
         logStep("Subscription upgraded successfully");
         return new Response(JSON.stringify({ 
           success: true, 
-          message: "Subscription upgraded successfully with prorated billing" 
+          message: `Successfully upgraded to ${targetPlan.name}! You've been charged the prorated difference and can use all new features immediately.` 
         }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
           status: 200,
         });
 
-      } else if (newAmount < currentAmount) {
-        // Downgrade: Cancel at end of period and schedule new subscription
-        logStep("Processing downgrade - will cancel current and create new subscription at period end");
+      } else {
+        // DOWNGRADE: Cancel current and schedule new at period end
+        logStep("Processing downgrade - scheduling at period end");
         
         // Cancel current subscription at period end
         await stripe.subscriptions.update(currentSubscription.id, {
@@ -176,23 +207,14 @@ serve(async (req) => {
           metadata: {
             ...currentSubscription.metadata,
             downgrade_scheduled: 'true',
-            new_tier: tier
+            new_tier: tier,
+            downgrade_initiated_at: new Date().toISOString()
           }
         });
 
-        // Create new price for the future subscription
-        const newPrice = await stripe.prices.create({
-          currency: "usd",
-          unit_amount: selectedPlan.amount,
-          recurring: { interval: "month" },
-          product_data: {
-            name: selectedPlan.name
-          }
-        });
-
-        // Create a scheduled subscription to start when current ends
+        // Create scheduled subscription to start when current ends
         await stripe.subscriptionSchedules.create({
-          customer: customerId,
+          customer: customerId!,
           start_date: currentSubscription.current_period_end,
           end_behavior: 'release',
           phases: [{
@@ -204,7 +226,8 @@ serve(async (req) => {
           metadata: {
             user_id: user.id,
             tier: tier,
-            downgrade_from: currentSubscription.id
+            downgrade_from: currentSubscription.id,
+            scheduled_at: new Date().toISOString()
           }
         });
 
@@ -213,18 +236,7 @@ serve(async (req) => {
         
         return new Response(JSON.stringify({ 
           success: true, 
-          message: `Your current plan will end on ${periodEnd.toDateString()} and you'll be switched to ${selectedPlan.name}. You'll continue to enjoy your current plan until then.` 
-        }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: 200,
-        });
-
-      } else {
-        // Same tier - no change needed
-        logStep("User already has this subscription tier");
-        return new Response(JSON.stringify({ 
-          success: true, 
-          message: "You're already subscribed to this plan" 
+          message: `Your current plan will end on ${periodEnd.toDateString()} and you'll switch to the ${targetPlan.name}. You'll continue to enjoy your current plan benefits until then.` 
         }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
           status: 200,
@@ -232,21 +244,9 @@ serve(async (req) => {
       }
     }
 
-    // No active subscription
-    if (tier === 'free') {
-      // User is already on free tier (no active subscription)
-      logStep("User is already on free tier");
-      return new Response(JSON.stringify({ 
-        success: true, 
-        message: "You're already on the free plan" 
-      }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 200,
-      });
-    }
-
-    // Create new checkout session for paid tiers
+    // CASE 3: No active subscription - create new checkout session
     logStep("Creating new subscription checkout session");
+    
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
       line_items: [
@@ -254,28 +254,32 @@ serve(async (req) => {
           price_data: {
             currency: "usd",
             product_data: {
-              name: selectedPlan.name
+              name: targetPlan.name
             },
-            unit_amount: selectedPlan.amount,
+            unit_amount: targetPlan.amount,
             recurring: { interval: "month" },
           },
           quantity: 1,
         },
       ],
       mode: "subscription",
-      success_url: `${origin}/dashboard?success=true`,
+      success_url: `${origin}/dashboard?success=true&tier=${tier}`,
       cancel_url: `${origin}/dashboard?canceled=true`,
       allow_promotion_codes: true,
       billing_address_collection: "required",
       metadata: {
         user_id: user.id,
-        tier: tier
+        tier: tier,
+        new_subscription: 'true'
       }
     });
 
     logStep("Checkout session created", { sessionId: session.id, url: session.url });
 
-    return new Response(JSON.stringify({ url: session.url }), {
+    return new Response(JSON.stringify({ 
+      url: session.url,
+      success: false // Indicates this is a redirect, not an immediate change
+    }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 200,
     });
