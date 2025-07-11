@@ -198,19 +198,31 @@ serve(async (req) => {
         });
 
       } else {
-        // DOWNGRADE: Schedule change at period end
+        // DOWNGRADE: Schedule change at period end using subscription schedules
         logStep("Processing downgrade - scheduling change at period end");
         
-        // Update subscription to change at period end
-        await stripe.subscriptions.update(currentSubscription.id, {
-          items: [{
-            id: currentSubscription.items.data[0].id,
-            price: newPrice.id,
-          }],
-          proration_behavior: 'none', // No immediate charge for downgrades
-          billing_cycle_anchor: currentSubscription.current_period_end, // Change at next billing cycle
+        // Create a subscription schedule to handle the downgrade
+        const subscriptionSchedule = await stripe.subscriptionSchedules.create({
+          from_subscription: currentSubscription.id,
+          phases: [
+            {
+              // Current phase - keep existing subscription until period end
+              items: [{
+                price: currentPrice.id,
+                quantity: 1
+              }],
+              end_date: currentSubscription.current_period_end
+            },
+            {
+              // New phase - start the downgraded plan
+              items: [{
+                price: newPrice.id,
+                quantity: 1
+              }]
+            }
+          ],
           metadata: {
-            ...currentSubscription.metadata,
+            user_id: user.id,
             downgrade_scheduled: 'true',
             new_tier: tier,
             downgrade_initiated_at: new Date().toISOString()
@@ -218,7 +230,10 @@ serve(async (req) => {
         });
 
         const periodEnd = new Date(currentSubscription.current_period_end * 1000);
-        logStep("Subscription downgrade scheduled", { effectiveDate: periodEnd });
+        logStep("Subscription downgrade scheduled", { 
+          scheduleId: subscriptionSchedule.id,
+          effectiveDate: periodEnd 
+        });
         
         return new Response(JSON.stringify({ 
           success: true, 
