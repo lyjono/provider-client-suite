@@ -78,7 +78,7 @@ export const useSubscription = () => {
     }
   }, [session?.access_token, refetch, queryClient]);
 
-  const createCheckoutSession = async (tier: 'starter' | 'pro') => {
+  const createCheckoutSession = async (tier: 'starter' | 'pro' | 'free') => {
     if (!session?.access_token) throw new Error('Not authenticated');
 
     const { data, error } = await supabase.functions.invoke('create-checkout', {
@@ -94,8 +94,9 @@ export const useSubscription = () => {
     if (data.url) {
       // Open Stripe checkout in a new tab for new subscriptions
       window.open(data.url, '_blank');
+      return null; // No message to show for redirects
     } else if (data.success) {
-      // For immediate upgrades/downgrades, just refresh the subscription status
+      // For immediate upgrades/downgrades/cancellations, just refresh the subscription status
       await checkSubscription();
       return data.message || 'Subscription updated successfully';
     }

@@ -8,7 +8,7 @@ import { toast } from '@/hooks/use-toast';
 
 interface SubscriptionUpgradeProps {
   currentTier: 'free' | 'starter' | 'pro';
-  onUpgrade: (tier: 'starter' | 'pro') => void;
+  onUpgrade: (tier: 'starter' | 'pro' | 'free') => void;
 }
 
 export const SubscriptionUpgrade = ({ currentTier, onUpgrade }: SubscriptionUpgradeProps) => {
@@ -46,7 +46,7 @@ export const SubscriptionUpgrade = ({ currentTier, onUpgrade }: SubscriptionUpgr
     }
   ];
 
-  const handleUpgradeClick = async (tier: 'starter' | 'pro') => {
+  const handleUpgradeClick = async (tier: 'starter' | 'pro' | 'free') => {
     try {
       setLoading(tier);
       const result = await createCheckoutSession(tier);
@@ -196,23 +196,23 @@ export const SubscriptionUpgrade = ({ currentTier, onUpgrade }: SubscriptionUpgr
                     <Button disabled className="w-full">
                       Current Plan
                     </Button>
-                  ) : plan.id === 'free' ? (
-                    currentTier !== 'free' ? (
-                      <Button 
-                        onClick={handleDowngradeToFree}
-                        disabled={isLoading || loading !== null}
-                        variant="outline"
-                        className="w-full"
-                      >
-                        {isLoading ? (
-                          'Opening Portal...'
-                        ) : (
-                          <>
-                            <ArrowDown className="h-4 w-4 mr-2" />
-                            Downgrade to Free
-                          </>
-                        )}
-                      </Button>
+                   ) : plan.id === 'free' ? (
+                     currentTier !== 'free' ? (
+                       <Button 
+                         onClick={() => handleUpgradeClick('free')}
+                         disabled={isLoading || loading !== null}
+                         variant="outline"
+                         className="w-full"
+                       >
+                         {isLoading ? (
+                           'Processing...'
+                         ) : (
+                           <>
+                             <ArrowDown className="h-4 w-4 mr-2" />
+                             Cancel Subscription
+                           </>
+                         )}
+                       </Button>
                     ) : (
                       <Button disabled className="w-full">
                         Current Plan

@@ -45,7 +45,7 @@ serve(async (req) => {
     logStep("User authenticated", { userId: user.id, email: user.email });
 
     const { tier } = await req.json();
-    if (!tier || !['starter', 'pro'].includes(tier)) {
+    if (!tier || !['starter', 'pro', 'free'].includes(tier)) {
       throw new Error("Invalid tier specified");
     }
     logStep("Tier requested", { tier });
@@ -83,7 +83,8 @@ serve(async (req) => {
     // Set up pricing based on tier - create actual Stripe prices for better management
     const priceMapping = {
       starter: { amount: 2999, name: "Starter Plan" }, // $29.99
-      pro: { amount: 7999, name: "Pro Plan" } // $79.99
+      pro: { amount: 7999, name: "Pro Plan" }, // $79.99
+      free: { amount: 0, name: "Free Plan" } // Free
     } as const;
 
     const selectedPlan = priceMapping[tier as keyof typeof priceMapping];
@@ -103,6 +104,31 @@ serve(async (req) => {
         newAmount, 
         subscriptionId: currentSubscription.id 
       });
+
+      // Handle cancellation to free tier
+      if (tier === 'free') {
+        logStep("Processing cancellation to free tier");
+        
+        // Cancel subscription at period end
+        await stripe.subscriptions.update(currentSubscription.id, {
+          cancel_at_period_end: true,
+          metadata: {
+            ...currentSubscription.metadata,
+            cancelled_to_free: 'true'
+          }
+        });
+
+        const periodEnd = new Date(currentSubscription.current_period_end * 1000);
+        logStep("Subscription cancelled, will end at period end", { effectiveDate: periodEnd });
+        
+        return new Response(JSON.stringify({ 
+          success: true, 
+          message: `Your subscription will end on ${periodEnd.toDateString()} and you'll switch to the free plan. You'll continue to enjoy your current plan until then.` 
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        });
+      }
 
       if (newAmount > currentAmount) {
         // Upgrade: Immediate change with proration
@@ -206,7 +232,20 @@ serve(async (req) => {
       }
     }
 
-    // No active subscription - create new checkout session
+    // No active subscription
+    if (tier === 'free') {
+      // User is already on free tier (no active subscription)
+      logStep("User is already on free tier");
+      return new Response(JSON.stringify({ 
+        success: true, 
+        message: "You're already on the free plan" 
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+      });
+    }
+
+    // Create new checkout session for paid tiers
     logStep("Creating new subscription checkout session");
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
