@@ -160,6 +160,10 @@ serve(async (req) => {
         });
       }
 
+      // Check if subscription is managed by a schedule
+      const isScheduleManaged = currentSubscription.schedule;
+      logStep("Subscription schedule status", { isScheduleManaged });
+
       // Create new price for the target tier
       const newPrice = await stripe.prices.create({
         currency: "usd",
@@ -174,19 +178,34 @@ serve(async (req) => {
         // UPGRADE: Immediate change with proration
         logStep("Processing upgrade with immediate proration");
         
-        await stripe.subscriptions.update(currentSubscription.id, {
-          items: [{
-            id: currentSubscription.items.data[0].id,
-            price: newPrice.id,
-          }],
-          proration_behavior: 'always_invoice',
-          metadata: {
-            user_id: user.id,
-            tier: tier,
-            upgrade_from: currentPrice.id,
-            upgraded_at: new Date().toISOString()
-          }
-        });
+        if (isScheduleManaged) {
+          // Update the schedule for immediate upgrade
+          const scheduleId = currentSubscription.schedule;
+          await stripe.subscriptionSchedules.update(scheduleId, {
+            phases: [{
+              items: [{
+                price: newPrice.id,
+                quantity: 1,
+              }],
+              proration_behavior: 'always_invoice'
+            }]
+          });
+        } else {
+          // Update subscription directly
+          await stripe.subscriptions.update(currentSubscription.id, {
+            items: [{
+              id: currentSubscription.items.data[0].id,
+              price: newPrice.id,
+            }],
+            proration_behavior: 'always_invoice',
+            metadata: {
+              user_id: user.id,
+              tier: tier,
+              upgrade_from: currentPrice.id,
+              upgraded_at: new Date().toISOString()
+            }
+          });
+        }
 
         logStep("Subscription upgraded successfully");
         return new Response(JSON.stringify({ 
@@ -198,39 +217,90 @@ serve(async (req) => {
         });
 
       } else {
-        // DOWNGRADE: Update subscription to change at end of billing cycle
-        logStep("Processing downgrade - updating subscription for end of cycle change");
-        
-        // Update the subscription with new price, effective at end of current period
-        const updatedSubscription = await stripe.subscriptions.update(currentSubscription.id, {
-          items: [{
-            id: currentSubscription.items.data[0].id,
-            price: newPrice.id,
-          }],
-          proration_behavior: 'none', // No immediate charge for downgrades
-          billing_cycle_anchor: 'unchanged', // Keep current billing cycle
-          metadata: {
-            ...currentSubscription.metadata,
-            downgrade_scheduled: 'true',
-            new_tier: tier,
-            downgrade_initiated_at: new Date().toISOString()
+        // DOWNGRADE or CANCEL
+        if (tier === 'free') {
+          // Cancel subscription
+          logStep("Processing cancellation");
+          
+          if (isScheduleManaged) {
+            // Cancel the schedule
+            const scheduleId = currentSubscription.schedule;
+            await stripe.subscriptionSchedules.cancel(scheduleId, {
+              prorate: false
+            });
+          } else {
+            // Cancel subscription at period end
+            await stripe.subscriptions.update(currentSubscription.id, {
+              cancel_at_period_end: true,
+              metadata: {
+                ...currentSubscription.metadata,
+                cancelled_to_free: 'true',
+                cancelled_by_user: user.id
+              }
+            });
           }
-        });
 
-        const periodEnd = new Date(currentSubscription.current_period_end * 1000);
-        logStep("Subscription downgrade completed", { 
-          subscriptionId: updatedSubscription.id,
-          newPrice: newPrice.id,
-          effectiveDate: periodEnd 
-        });
-        
-        return new Response(JSON.stringify({ 
-          success: true, 
-          message: `Your plan will switch to ${targetPlan.name} at your next billing cycle on ${periodEnd.toDateString()}. You'll keep all current benefits until then.` 
-        }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: 200,
-        });
+          const periodEnd = new Date(currentSubscription.current_period_end * 1000);
+          return new Response(JSON.stringify({ 
+            success: true, 
+            message: `Your subscription will end on ${periodEnd.toDateString()} and you'll switch to the free plan. You'll continue to enjoy your current plan benefits until then.` 
+          }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 200,
+          });
+        } else {
+          // DOWNGRADE to different paid tier
+          logStep("Processing downgrade to paid tier");
+          
+          if (isScheduleManaged) {
+            // Update existing schedule
+            const scheduleId = currentSubscription.schedule;
+            await stripe.subscriptionSchedules.update(scheduleId, {
+              phases: [
+                {
+                  // Keep current subscription until period end
+                  items: [{
+                    price: currentPrice.id,
+                    quantity: 1
+                  }],
+                  end_date: currentSubscription.current_period_end
+                },
+                {
+                  // New phase with downgraded pricing
+                  items: [{
+                    price: newPrice.id,
+                    quantity: 1
+                  }]
+                }
+              ]
+            });
+          } else {
+            // Update subscription for end-of-cycle change
+            await stripe.subscriptions.update(currentSubscription.id, {
+              items: [{
+                id: currentSubscription.items.data[0].id,
+                price: newPrice.id,
+              }],
+              proration_behavior: 'none',
+              billing_cycle_anchor: 'unchanged',
+              metadata: {
+                ...currentSubscription.metadata,
+                downgrade_scheduled: 'true',
+                new_tier: tier,
+                downgrade_initiated_at: new Date().toISOString()
+              }
+            });
+          }
+
+          const periodEnd = new Date(currentSubscription.current_period_end * 1000);
+          return new Response(JSON.stringify({ 
+            success: true, 
+            message: `Your plan will switch to ${targetPlan.name} at your next billing cycle on ${periodEnd.toDateString()}. You'll keep all current benefits until then.` 
+          }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 200,
+          });
+        }
       }
     }
 
