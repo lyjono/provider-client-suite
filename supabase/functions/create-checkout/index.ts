@@ -112,7 +112,18 @@ serve(async (req) => {
           isDowngrade: newAmount <= currentAmount 
         });
         
-        if (newAmount <= currentAmount) {
+        if (newAmount === currentAmount) {
+          // Same tier - no change needed
+          logStep("Same tier requested - no change needed");
+          return new Response(JSON.stringify({ 
+            message: `You are already on the ${tier} plan` 
+          }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 200,
+          });
+        }
+        
+        if (newAmount < currentAmount) {
           // Downgrade: schedule change at period end using subscription schedule
           logStep("Processing downgrade - scheduling for period end");
           
