@@ -46,11 +46,17 @@ export const useSubscription = () => {
   });
 
   // Function to check subscription status with Stripe and refresh local data
-  const checkSubscription = useCallback(async () => {
+  const checkSubscription = useCallback(async (force = false) => {
     if (!session?.access_token) return;
 
     try {
-      console.log('Checking subscription status...');
+      console.log('Checking subscription status...', force ? '(forced)' : '');
+      
+      // Clear session storage if forced
+      if (force && user?.id) {
+        sessionStorage.removeItem(`subscription-checked-${user.id}`);
+      }
+      
       const { data, error } = await supabase.functions.invoke('check-subscription', {
         headers: {
           Authorization: `Bearer ${session.access_token}`,
@@ -76,7 +82,7 @@ export const useSubscription = () => {
     } catch (error) {
       console.error('Error checking subscription:', error);
     }
-  }, [session?.access_token, refetch, queryClient]);
+  }, [session?.access_token, refetch, queryClient, user?.id]);
 
   const createCheckoutSession = async (tier: 'starter' | 'pro' | 'free') => {
     if (!session?.access_token) throw new Error('Not authenticated');

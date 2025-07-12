@@ -2,14 +2,14 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Crown, CheckCircle, AlertCircle, ArrowDown, ExternalLink } from 'lucide-react';
+import { Crown, CheckCircle, AlertCircle, ArrowDown, ExternalLink, RefreshCw } from 'lucide-react';
 import { useSubscription } from '@/hooks/useSubscription';
 import { SubscriptionUpgrade } from '@/components/SubscriptionUpgrade';
 import { useState } from 'react';
 import { toast } from '@/hooks/use-toast';
 
 export const ProviderSubscriptionManager = () => {
-  const { subscribed, subscription_tier, subscription_end, openCustomerPortal } = useSubscription();
+  const { subscribed, subscription_tier, subscription_end, openCustomerPortal, checkSubscription } = useSubscription();
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -18,6 +18,25 @@ export const ProviderSubscriptionManager = () => {
 
   const handleUpgrade = (tier: 'starter' | 'pro' | 'free') => {
     setShowUpgrade(false);
+  };
+
+  const handleRefreshSubscription = async () => {
+    try {
+      setLoading(true);
+      await checkSubscription(true); // Force refresh
+      toast({
+        title: "Subscription Refreshed",
+        description: "Your subscription data has been updated.",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to refresh subscription data.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleManageSubscription = async () => {
@@ -133,6 +152,16 @@ export const ProviderSubscriptionManager = () => {
           </div>
 
           <div className="pt-4 border-t space-y-2">
+            <Button 
+              onClick={handleRefreshSubscription} 
+              variant="outline" 
+              className="w-full"
+              disabled={loading}
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+              {loading ? 'Refreshing...' : 'Refresh Subscription Data'}
+            </Button>
+            
             {(!subscribed || currentTier === 'free') && (
               <Button onClick={() => setShowUpgrade(true)} className="w-full">
                 <Crown className="h-4 w-4 mr-2" />
