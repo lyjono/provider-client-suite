@@ -124,33 +124,11 @@ serve(async (req) => {
         }
         
         if (newAmount < currentAmount) {
-          // Downgrade: schedule change at period end using subscription schedule
-          logStep("Processing downgrade - scheduling for period end");
+          // Downgrade: Cancel current subscription at period end and they'll need to resubscribe
+          logStep("Processing downgrade - canceling at period end");
           
-          // Create a price for the new tier
-          const price = await stripe.prices.create({
-            currency: 'usd',
-            unit_amount: newAmount,
-            recurring: { interval: 'month' },
-            product_data: {
-              name: tier === 'starter' ? 'Starter Plan' : 'Pro Plan',
-            },
-          });
-          
-          await stripe.subscriptionSchedules.create({
-            customer: customerId,
-            start_date: currentSub.current_period_end,
-            end_behavior: 'release',
-            phases: [
-              {
-                items: [
-                  {
-                    price: price.id,
-                    quantity: 1,
-                  },
-                ],
-              },
-            ],
+          await stripe.subscriptions.update(currentSub.id, {
+            cancel_at_period_end: true,
           });
           
           logStep("Downgrade scheduled for period end", { 
@@ -159,7 +137,7 @@ serve(async (req) => {
           });
 
           return new Response(JSON.stringify({ 
-            message: `Your plan will be downgraded to ${tier} at the end of your current billing period` 
+            message: `Your current plan will be cancelled at the end of your billing period. You can then subscribe to the ${tier} plan.` 
           }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
             status: 200,
