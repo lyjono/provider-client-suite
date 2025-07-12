@@ -43,7 +43,7 @@ serve(async (req) => {
     if (!tier || !['free', 'starter', 'pro'].includes(tier)) {
       throw new Error("Invalid tier specified");
     }
-    logStep("Request body parsed", { tier });
+    logStep("Request body parsed", { tier, requestedTier: tier });
 
     const stripe = new Stripe(stripeKey, { apiVersion: "2023-10-16" });
     
