@@ -119,7 +119,9 @@ serve(async (req) => {
                   {
                     price_data: {
                       currency: 'usd',
-                      product: tier === 'starter' ? 'Starter Plan' : 'Pro Plan',
+                      product_data: {
+                        name: tier === 'starter' ? 'Starter Plan' : 'Pro Plan',
+                      },
                       unit_amount: newAmount,
                       recurring: { interval: 'month' },
                     },
