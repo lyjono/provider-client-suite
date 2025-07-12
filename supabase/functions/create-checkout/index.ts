@@ -13,7 +13,10 @@ const logStep = (step: string, details?: any) => {
 };
 
 serve(async (req) => {
+  console.log("=== FUNCTION ENTRY POINT ===");
+  
   if (req.method === "OPTIONS") {
+    console.log("OPTIONS request handled");
     return new Response(null, { headers: corsHeaders });
   }
 
@@ -23,13 +26,18 @@ serve(async (req) => {
 
     const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
     console.log("Stripe key check:", stripeKey ? "EXISTS" : "MISSING");
-    if (!stripeKey) throw new Error("STRIPE_SECRET_KEY is not set");
+    if (!stripeKey) {
+      console.log("STRIPE_SECRET_KEY is missing!");
+      throw new Error("STRIPE_SECRET_KEY is not set");
+    }
 
+    console.log("Creating Supabase client...");
     const supabaseClient = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
       { auth: { persistSession: false } }
     );
+    console.log("Supabase client created");
 
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) throw new Error("No authorization header provided");
