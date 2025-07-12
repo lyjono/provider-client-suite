@@ -18,9 +18,11 @@ serve(async (req) => {
   }
 
   try {
+    console.log("Function started - basic debug");
     logStep("Function started");
 
     const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+    console.log("Stripe key check:", stripeKey ? "EXISTS" : "MISSING");
     if (!stripeKey) throw new Error("STRIPE_SECRET_KEY is not set");
 
     const supabaseClient = createClient(
