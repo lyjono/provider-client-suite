@@ -59,7 +59,7 @@ const Index = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
           <div className="text-center">
             <h1 className="text-4xl md:text-6xl font-bold text-gray-900 mb-6">
-              Manage Your Clients Like a Pro
+              Manage Your Clients Like a Professional!
             </h1>
             <p className="text-xl text-gray-600 mb-8 max-w-3xl mx-auto">
               The all-in-one platform for providers to manage clients, book appointments, communicate securely, and share documents.
