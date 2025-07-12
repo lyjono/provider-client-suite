@@ -109,6 +109,16 @@ serve(async (req) => {
           // Downgrade: schedule change at period end using subscription schedule
           logStep("Processing downgrade - scheduling for period end");
           
+          // Create a price for the new tier
+          const price = await stripe.prices.create({
+            currency: 'usd',
+            unit_amount: newAmount,
+            recurring: { interval: 'month' },
+            product_data: {
+              name: tier === 'starter' ? 'Starter Plan' : 'Pro Plan',
+            },
+          });
+          
           await stripe.subscriptionSchedules.create({
             customer: customerId,
             start_date: currentSub.current_period_end,
@@ -117,14 +127,7 @@ serve(async (req) => {
               {
                 items: [
                   {
-                    price_data: {
-                      currency: 'usd',
-                      product_data: {
-                        name: tier === 'starter' ? 'Starter Plan' : 'Pro Plan',
-                      },
-                      unit_amount: newAmount,
-                      recurring: { interval: 'month' },
-                    },
+                    price: price.id,
                     quantity: 1,
                   },
                 ],
