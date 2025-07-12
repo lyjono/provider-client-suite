@@ -105,6 +105,13 @@ serve(async (req) => {
         // Determine if this is an upgrade or downgrade
         const newAmount = tier === 'starter' ? 799 : 2999; // $7.99 or $29.99
         
+        logStep("Comparing prices", { 
+          currentAmount, 
+          newAmount, 
+          currentPriceId: currentPrice.id,
+          isDowngrade: newAmount <= currentAmount 
+        });
+        
         if (newAmount <= currentAmount) {
           // Downgrade: schedule change at period end using subscription schedule
           logStep("Processing downgrade - scheduling for period end");
