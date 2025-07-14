@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -96,19 +95,8 @@ export const useSubscription = () => {
 
     if (error) throw error;
 
-    // Handle different response types
-    if (data.url && !data.success) {
-      // New subscription - redirect to Stripe
-      window.open(data.url, '_blank');
-      return null;
-    } else if (data.success) {
-      // Immediate change (upgrade/downgrade/cancellation)
-      await checkSubscription();
-      return data.message || 'Subscription updated successfully';
-    } else {
-      // Fallback case
-      throw new Error('Unexpected response from server');
-    }
+    // Return the full data object so the FE can check for portal or url
+    return data;
   };
 
   // Function to open customer portal

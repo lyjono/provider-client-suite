@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@14.21.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
@@ -45,22 +44,37 @@ serve(async (req) => {
     logStep("User authenticated", { userId: user.id, email: user.email });
 
     const stripe = new Stripe(stripeKey, { apiVersion: "2023-10-16" });
-    const customers = await stripe.customers.list({ email: user.email, limit: 1 });
-    if (customers.data.length === 0) {
-      throw new Error("No Stripe customer found for this user");
+
+    // Look up stripe_customer_id from DB first
+    const { data: subscriber, error: subscriberError } = await supabaseClient
+      .from("subscribers")
+      .select("stripe_customer_id")
+      .eq("user_id", user.id)
+      .single();
+    let customerId: string | undefined;
+    if (subscriberError) {
+      logStep("Error fetching subscriber for stripe_customer_id", subscriberError);
     }
-    const customerId = customers.data[0].id;
-    logStep("Found Stripe customer", { customerId });
+    if (subscriber?.stripe_customer_id) {
+      customerId = subscriber.stripe_customer_id;
+      logStep("Using stripe_customer_id from DB", { customerId });
+    } else {
+      // Fallback: search Stripe by email (legacy users)
+      const customers = await stripe.customers.list({ email: user.email, limit: 1 });
+      if (customers.data.length === 0) {
+        throw new Error("No Stripe customer found for this user");
+      }
+      customerId = customers.data[0].id;
+      logStep("Found Stripe customer by email", { customerId });
+    }
 
     const origin = req.headers.get("origin") || "http://localhost:3000";
-    
     try {
       const portalSession = await stripe.billingPortal.sessions.create({
         customer: customerId,
         return_url: `${origin}/dashboard`,
       });
       logStep("Customer portal session created", { sessionId: portalSession.id, url: portalSession.url });
-
       return new Response(JSON.stringify({ url: portalSession.url }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 200,

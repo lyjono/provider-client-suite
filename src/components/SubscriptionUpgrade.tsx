@@ -51,25 +51,39 @@ export const SubscriptionUpgrade = ({ currentTier, onUpgrade }: SubscriptionUpgr
       setLoading(tier);
       const result = await createCheckoutSession(tier);
       
+      // If backend says to use the portal, open it and return immediately
+      if (result && typeof result === 'object' && result.portal) {
+        await openCustomerPortal();
+        toast({
+          title: "Manage Subscription",
+          description: "You're being redirected to manage your subscription through Stripe.",
+        });
+        setLoading(null);
+        return;
+      }
+      // If we got a Stripe Checkout URL, open it
+      if (result && result.url) {
+        window.location.href = result.url;
+        setLoading(null);
+        return;
+      }
       // If we got a message back (immediate upgrade/downgrade), show it
       if (result) {
         toast({
           title: "Subscription Updated",
-          description: result,
+          description: typeof result === 'string' ? result : JSON.stringify(result),
         });
         onUpgrade(tier);
       } else {
-        // For new subscriptions that redirect to Stripe
+        // Fallback toast
         toast({
           title: "Redirecting to Stripe",
           description: "You're being redirected to complete your subscription upgrade.",
         });
       }
-      
       setTimeout(() => {
         setLoading(null);
       }, 3000);
-      
     } catch (error) {
       console.error('Error creating checkout session:', error);
       setLoading(null);
@@ -199,7 +213,7 @@ export const SubscriptionUpgrade = ({ currentTier, onUpgrade }: SubscriptionUpgr
                    ) : plan.id === 'free' ? (
                      currentTier !== 'free' ? (
                        <Button 
-                         onClick={() => handleUpgradeClick('free')}
+                         onClick={handleDowngradeToFree}
                          disabled={isLoading || loading !== null}
                          variant="outline"
                          className="w-full"

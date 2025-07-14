@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@14.21.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
@@ -49,10 +48,28 @@ serve(async (req) => {
     logStep("User authenticated", { userId: user.id, email: user.email });
 
     const stripe = new Stripe(stripeKey, { apiVersion: "2023-10-16" });
-    const customers = await stripe.customers.list({ email: user.email, limit: 1 });
     
-    if (customers.data.length === 0) {
-      logStep("No customer found, updating unsubscribed state");
+    // Check if we have a stripe_customer_id stored in the DB
+    const { data: subscriberRecord } = await supabaseClient
+      .from("subscribers")
+      .select("stripe_customer_id")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    let customerIdToUse = null;
+    if (subscriberRecord && subscriberRecord.stripe_customer_id) {
+      customerIdToUse = subscriberRecord.stripe_customer_id;
+      logStep("Found stripe_customer_id in DB", { userId: user.id, customerId: customerIdToUse });
+    } else {
+      // fallback to searching by email if no customer_id in DB
+      logStep("No stripe_customer_id in DB, searching Stripe by email", { email: user.email });
+      const customers = await stripe.customers.list({ email: user.email, limit: 1 });
+      if (customers.data.length > 0) {
+        customerIdToUse = customers.data[0].id;
+        logStep("Found Stripe customer by email", { customerId: customerIdToUse });
+      }
+    }
+    if (!customerIdToUse) {
+      logStep("No Stripe customer found for user, updating unsubscribed state", { userId: user.id, email: user.email });
       await supabaseClient.from("subscribers").upsert({
         email: user.email,
         user_id: user.id,
@@ -77,8 +94,8 @@ serve(async (req) => {
       });
     }
 
-    const customerId = customers.data[0].id;
-    logStep("Found Stripe customer", { customerId });
+    const customerId = customerIdToUse;
+    logStep("Using customerId for Stripe operations", { customerId });
 
     // Get ALL subscriptions (active, canceled, past_due, etc.) to properly handle cancellations
     const subscriptions = await stripe.subscriptions.list({
@@ -91,7 +108,7 @@ serve(async (req) => {
       statuses: subscriptions.data.map(sub => ({ id: sub.id, status: sub.status, cancel_at_period_end: sub.cancel_at_period_end }))
     });
 
-    // Find the most recent subscription that's either active or canceled
+    // Find the most recent subscription that's either active, canceled, or past_due
     const relevantSub = subscriptions.data
       .filter(sub => ['active', 'canceled', 'past_due'].includes(sub.status))
       .sort((a, b) => b.created - a.created)[0];
@@ -108,21 +125,31 @@ serve(async (req) => {
         canceled_at: relevantSub.canceled_at
       });
 
-      // Consider subscription active only if it's truly active and not marked for cancellation
-      if (relevantSub.status === 'active' && !relevantSub.cancel_at_period_end) {
+      // Consider subscription active if status is 'active', regardless of cancel_at_period_end
+      if (relevantSub.status === 'active') {
         hasActiveSub = true;
         subscriptionEnd = new Date(relevantSub.current_period_end * 1000).toISOString();
         
-        // Determine subscription tier from price
+        // Determine subscription tier from priceId (robust mapping)
         const priceId = relevantSub.items.data[0].price.id;
-        const price = await stripe.prices.retrieve(priceId);
-        const amount = price.unit_amount || 0;
-        if (amount <= 799) {
-          subscriptionTier = "starter";
-        } else if (amount >= 2999) {
-          subscriptionTier = "pro";
-        } else {
-          subscriptionTier = "starter";
+        const priceIdToTier = {
+          [Deno.env.get("STRIPE_PRICE_STARTER")]: "starter",
+          [Deno.env.get("STRIPE_PRICE_PRO")]: "pro",
+          // Add more price IDs and tiers as needed
+        };
+        subscriptionTier = priceIdToTier[priceId] || null;
+        if (!subscriptionTier) {
+          // fallback to previous logic or keep previous tier if possible
+          const price = await stripe.prices.retrieve(priceId);
+          const amount = price.unit_amount || 0;
+          if (amount <= 799) {
+            subscriptionTier = "starter";
+          } else if (amount >= 2999) {
+            subscriptionTier = "pro";
+          } else {
+            subscriptionTier = "starter";
+          }
+          logStep("Unknown priceId for active subscription, fallback to amount-based tier", { priceId, amount, subscriptionTier });
         }
         logStep("Active subscription found", { subscriptionId: relevantSub.id, endDate: subscriptionEnd, tier: subscriptionTier });
       } else {
@@ -150,6 +177,7 @@ serve(async (req) => {
       subscription_end: subscriptionEnd,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'email' });
+    logStep("DB UPDATE", { source: "check-subscription", table: "subscribers", subscribed: hasActiveSub, subscriptionTier, customerId });
 
     // Update providers table as well
     await supabaseClient.from("providers").update({
@@ -158,6 +186,7 @@ serve(async (req) => {
       stripe_customer_id: customerId,
       updated_at: new Date().toISOString(),
     }).eq('user_id', user.id);
+    logStep("DB UPDATE", { source: "check-subscription", table: "providers", subscriptionTier: subscriptionTier || 'free', customerId });
 
     logStep("Updated both subscribers and providers tables", { 
       subscribed: hasActiveSub, 
